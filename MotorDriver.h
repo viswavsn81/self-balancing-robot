@@ -8,7 +8,7 @@ class MotorDriver{
         void stop();
 
     private:
-        void setMotor(int in1, int in2, int pwm_pin, int speed);
+        void setMotor(int in1, int pwm_pin, int speed);
 };
 
 #endif
