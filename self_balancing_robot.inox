@@ -2,7 +2,7 @@
 #include "MPU6050.h"
 #include "kalman.h"
 #include "MotorDriver.h"
-#include "PIDController.h"
+#include <PID_v1.h>
 
 #define ACC_LSB_PER_G 8192.0
 #define GYRO_LSB_PER_DPS 65.5
@@ -16,14 +16,13 @@ double Setpoint = 0;     // Desired angle (upright)
 double Input = 0;        // Current angle from Kalman
 double Output = 0;       // PID output to motors
 
-double Kp = 25;
-double Ki = 5;
-double Kd = 0.5;
+double Kp = 2.0;
+double Ki = 1.0;
+double Kd = 0.75;
 
+PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 unsigned long prevTime = 0;
-
-PIDController myPID(Kp, Ki, Kd);
 
 void setup() {
   Serial.begin(115200);
@@ -31,10 +30,8 @@ void setup() {
   mpu.init();
   motors.init();
 
-  
-  myPID.setTunings(Kp, Ki, Kd);
-  
-
+  myPID.SetMode(AUTOMATIC);
+  myPID.SetOutputLimits(-255, 255);
 
   prevTime = millis();
   Setpoint = 0; // upright
@@ -58,8 +55,7 @@ void loop() {
   float kalman_angle = kalman.getAngle(acc_angle, gy_dps, dt);
   Input = kalman_angle;
 
-  Output = myPID.compute(Setpoint, Input, dt);
-
+  myPID.Compute();
   int drive = (int)constrain(Output, -255, 255);
   motors.drive(drive, drive);
 
