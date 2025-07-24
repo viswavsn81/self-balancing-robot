@@ -16,9 +16,9 @@ double Setpoint = 0;     // Desired angle (upright)
 double Input = 0;        // Current angle from Kalman
 double Output = 0;       // PID output to motors
 
-double Kp = 8.0;
-double Ki = 0.5;
-double Kd = 1.0;
+double Kp = 2.0;
+double Ki = 1.0;
+double Kd = 0.75;
 
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
