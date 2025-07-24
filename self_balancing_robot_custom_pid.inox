@@ -1,0 +1,46 @@
+#include <Wire.h>
+#include "MPU6050.h"
+#include "kalman.h"
+#include "MotorDriver.h"
+#include "PIDController.h"
+
+#define ACC_LSB_PER_G 8192.0
+#define GYRO_LSB_PER_DPS 65.5
+
+MPU6050 mpu;
+Kalman kalman;
+MotorDriver motors;
+
+// PID variables
+double Setpoint = 0;     // Desired angle (upright)
+double Input = 0;        // Current angle from Kalman
+double Output = 0;       // PID output to motors
+
+double Kp = 2.0;
+double Ki = 0;
+double Kd = 0;
+
+
+unsigned long prevTime = 0;
+
+PIDController pid(15.0, 1.0, 0.5);  // Example PID gains
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin();
+  mpu.init();
+  motors.init();
+
+
+  prevTime = millis();
+  Setpoint = 0; // upright
+}
+
+void loop() {
+  float angle = getAngle();  // From sensor + kalman filter
+  float dt = 0.01;  // Placeholder: compute using millis() or micros() for real timing
+  float setpoint = 0.0;
+  float control_signal = pid.compute(setpoint, angle, dt);
+  motor.drive(LEFT_MOTOR, control_signal);
+  motor.drive(RIGHT_MOTOR, control_signal);
+}
