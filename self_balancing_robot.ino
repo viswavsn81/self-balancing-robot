@@ -41,6 +41,8 @@ PIDController pid(25.0f, 5.0f, 0.5f);
 State state = DISARMED;
 float angleTrim = 0.0f;         // setpoint offset: mechanical balance point
 bool streaming = false;
+bool mpuOk = false;             // IMU may be unpowered on USB-only power
+uint32_t lastMpuRetryMs = 0;
 
 uint32_t lastControlUs = 0;
 uint32_t armHoldStartMs = 0;
@@ -102,6 +104,7 @@ void printStatus() {
     case BALANCING:  Serial.print(F("BALANCING")); break;
     case MOTOR_TEST: Serial.print(F("MOTOR_TEST")); break;
   }
+  Serial.print(F(" mpu=")); Serial.print(mpuOk ? F("OK") : F("OFFLINE"));
   Serial.print(F(" stream=")); Serial.print(streaming ? 1 : 0);
   Serial.print(F(" t_ms=")); Serial.println(millis());
   printGains();
@@ -140,7 +143,9 @@ void parseLine(char* line) {
     case '?': printStatus(); break;
     case 'h': printHelp(); break;
     case 'a':
-      if (state == DISARMED) {
+      if (!mpuOk) {
+        Serial.println(F("# arm refused: MPU6050 offline (battery off?)"));
+      } else if (state == DISARMED) {
         state = ARMING;
         armHolding = false;
         Serial.println(F("# ARMING: hold upright ~2 s"));
@@ -175,7 +180,9 @@ void parseLine(char* line) {
       break;
     }
     case 'c':
-      if (state == BALANCING || state == MOTOR_TEST) {
+      if (!mpuOk) {
+        Serial.println(F("# gyro cal refused: MPU6050 offline"));
+      } else if (state == BALANCING || state == MOTOR_TEST) {
         Serial.println(F("# gyro cal refused: disarm first"));
       } else {
         Serial.println(F("# gyro cal: keep robot STILL..."));
@@ -235,6 +242,16 @@ void handleSerial() {
   }
 }
 
+void calibrateAndSeed() {
+  Serial.println(F("# gyro cal: keep robot still..."));
+  mpu.calibrateGyro(500);
+  Serial.println(F("# gyro cal done ('c' to redo)"));
+  int16_t ax, ay, az;
+  mpu.readAccelerometer(ax, ay, az);
+  kalman.setAngle(atan2f((float)ay / ACC_LSB_PER_G, (float)az / ACC_LSB_PER_G)
+                  * 180.0f / PI);
+}
+
 // ------------------------------------------------------------------- setup --
 void setup() {
   Serial.begin(115200);
@@ -244,19 +261,14 @@ void setup() {
   motors.init();                 // driver in standby, PWM zero
   Serial.println(F("# self-balancing-robot fw2 — motors DISARMED at boot"));
 
-  if (!mpu.init()) {
-    Serial.println(F("# WARNING: MPU6050 WHO_AM_I failed — check I2C wiring"));
-  }
   loadSettings();
 
-  Serial.println(F("# gyro cal: keep robot still..."));
-  mpu.calibrateGyro(500);
-  Serial.println(F("# gyro cal done ('c' to redo)"));
-
-  int16_t ax, ay, az;
-  mpu.readAccelerometer(ax, ay, az);
-  kalman.setAngle(atan2f((float)ay / ACC_LSB_PER_G, (float)az / ACC_LSB_PER_G)
-                  * 180.0f / PI);
+  mpuOk = mpu.init();
+  if (mpuOk) {
+    calibrateAndSeed();
+  } else {
+    Serial.println(F("# WARNING: MPU6050 offline (unpowered? wiring?) — will retry"));
+  }
 
   Serial.println(F("# 'h' for help, 'a' to arm, 'x' = E-STOP"));
   printGains();
@@ -273,17 +285,30 @@ void loop() {
   lastControlUs = nowUs;
   float dt = dtUs * 1e-6f;
 
-  int16_t ax, ay, az, gx, gy, gz;
-  mpu.readMotion(ax, ay, az, gx, gy, gz);
+  float acc_angle = 0, angle = 0, gy_dps = 0;
+  if (!mpuOk) {
+    // IMU likely on the battery rail: keep the console alive, retry quietly.
+    if (millis() - lastMpuRetryMs > 2000) {
+      lastMpuRetryMs = millis();
+      if (mpu.init()) {
+        mpuOk = true;
+        Serial.println(F("# MPU6050 online"));
+        calibrateAndSeed();
+      }
+    }
+  } else {
+    int16_t ax, ay, az, gx, gy, gz;
+    mpu.readMotion(ax, ay, az, gx, gy, gz);
 
-  float ay_g = (float)ay / ACC_LSB_PER_G;
-  float az_g = (float)az / ACC_LSB_PER_G;
-  float gy_dps = (float)gy / GYRO_LSB_PER_DPS;
+    float ay_g = (float)ay / ACC_LSB_PER_G;
+    float az_g = (float)az / ACC_LSB_PER_G;
+    gy_dps = (float)gy / GYRO_LSB_PER_DPS;
 
-  float acc_angle = atan2f(ay_g, az_g) * 180.0f / PI;
-  float angle = kalman.getAngle(acc_angle, gy_dps, dt);
+    acc_angle = atan2f(ay_g, az_g) * 180.0f / PI;
+    angle = kalman.getAngle(acc_angle, gy_dps, dt);
+  }
 
-  if (trimCapRemaining > 0) {
+  if (mpuOk && trimCapRemaining > 0) {
     trimCapSum += angle;
     if (--trimCapRemaining == 0) {
       angleTrim = trimCapSum / TRIM_CAP_CYCLES;
@@ -334,7 +359,7 @@ void loop() {
       break;
   }
 
-  if (streaming && ++telemCount >= TELEM_DECIM) {
+  if (streaming && mpuOk && ++telemCount >= TELEM_DECIM) {
     telemCount = 0;
     Serial.print(millis());          Serial.print(',');
     Serial.print(acc_angle, 2);      Serial.print(',');

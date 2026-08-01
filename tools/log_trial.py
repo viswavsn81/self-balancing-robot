@@ -44,7 +44,7 @@ def next_trial_path() -> Path:
     return LOGS / f"trial_{max(nums, default=0) + 1:03d}.csv"
 
 
-def read_status(ser: serial.Serial, timeout: float = 2.0) -> list[str]:
+def read_status(ser: serial.Serial, timeout: float = 4.0) -> list[str]:
     """Send '?' and collect the '#' status lines the firmware replies with."""
     ser.reset_input_buffer()
     ser.write(b"?\n")
@@ -70,12 +70,20 @@ def main() -> int:
     args = ap.parse_args()
 
     try:
-        ser = serial.Serial(args.port, args.baud, timeout=0.2)
+        # Suppress DTR/RTS before opening so the CH340 doesn't reset the
+        # board: a reset would discard any live-tuned gains not yet saved
+        # to EEPROM. (If the OS resets it anyway, read_status still works —
+        # it just captures the boot banner.)
+        ser = serial.Serial(timeout=0.2)
+        ser.port, ser.baudrate = args.port, args.baud
+        ser.dtr = False
+        ser.rts = False
+        ser.open()
     except serial.SerialException as e:
         print(f"cannot open {args.port}: {e}", file=sys.stderr)
         return 1
 
-    time.sleep(0.3)  # some clones reset on port open; give the banner a moment
+    time.sleep(0.3)  # if the board did reset, give the banner a moment
 
     status = read_status(ser)
     path = next_trial_path()
@@ -111,15 +119,20 @@ def main() -> int:
 
         print(f"logging to {path} — Ctrl-C to stop; input is forwarded to robot")
         deadline = time.monotonic() + args.seconds if args.seconds else None
+        stdin_open = True
         try:
             while deadline is None or time.monotonic() < deadline:
                 # forward operator commands typed on stdin
-                r, _, _ = select.select([sys.stdin], [], [], 0.2)
-                if r:
-                    cmd = sys.stdin.readline()
-                    if not cmd:
-                        break
-                    ser.write(cmd.encode("ascii", errors="ignore"))
+                if stdin_open:
+                    r, _, _ = select.select([sys.stdin], [], [], 0.2)
+                    if r:
+                        cmd = sys.stdin.readline()
+                        if not cmd:      # EOF: stop forwarding, keep logging
+                            stdin_open = False
+                            continue
+                        ser.write(cmd.encode("ascii", errors="ignore"))
+                else:
+                    time.sleep(0.2)
         except KeyboardInterrupt:
             pass
         finally:

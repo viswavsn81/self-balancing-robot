@@ -3,6 +3,9 @@
 
 bool MPU6050::init() {
   Wire.begin();
+  // Without this, a missing/unpowered MPU hangs the AVR Wire library
+  // forever inside the first transaction (observed on USB-only power).
+  Wire.setWireTimeout(3000, true);
   writeRegister(0x6B, 0x01); // Wake up, clock source = PLL with X gyro ref
   writeRegister(0x1A, 0x03); // DLPF ~44 Hz accel / 42 Hz gyro
   writeRegister(0x1B, 0x08); // Gyro full scale +/-500 dps (65.5 LSB/dps)
