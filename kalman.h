@@ -16,6 +16,10 @@ class Kalman {
       P[1][1] = 0.0f;
     }
 
+    // Seed the filter (e.g. with the accel angle at arm time) so it doesn't
+    // have to converge from 0 while the robot is already tilted.
+    void setAngle(float newAngle) { angle = newAngle; }
+
     float getAngle(float newAngle, float newRate, float dt) {
       // Predict
       rate = newRate - bias;

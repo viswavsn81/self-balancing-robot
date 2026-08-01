@@ -8,70 +8,76 @@
 #define PWMB 6
 #define STBY 3
 
+// Motors are mounted mirrored: positive command = robot forward requires
+// negating both. If the Phase 1 direction test shows wheels driving the
+// wrong way, flip signs HERE and nowhere else.
+#define MOTOR_SIGN_LEFT  (-1)
+#define MOTOR_SIGN_RIGHT (-1)
+
 void MotorDriver::init(){
     pinMode(AIN1, OUTPUT);
     pinMode(PWMA, OUTPUT);
     pinMode(BIN1, OUTPUT);
     pinMode(PWMB, OUTPUT);
     pinMode(STBY, OUTPUT);
+    // Boot state per POWER PROTOCOL: PWM zero, driver in standby.
+    analogWrite(PWMA, 0);
+    analogWrite(PWMB, 0);
+    digitalWrite(AIN1, LOW);
+    digitalWrite(BIN1, LOW);
+    digitalWrite(STBY, LOW);
+    enabled = false;
+}
+
+void MotorDriver::enable(){
+    stop();
     digitalWrite(STBY, HIGH);
+    enabled = true;
+}
+
+void MotorDriver::disable(){
+    stop();
+    digitalWrite(STBY, LOW);
+    enabled = false;
 }
 
 void MotorDriver::setMotor(int in1, int pwm_pin, int speed){
-    
     if(speed > 0){
-        //Clockwise
         digitalWrite(in1, HIGH);
-         // Set the PWM pin for speed control
-        analogWrite(pwm_pin, speed);
-    
+        analogWrite(pwm_pin, speed > 255 ? 255 : speed);
     }
     else{
-        //CCW
-        digitalWrite(in1,LOW);
-         // Set the PWM pin for speed control
-        analogWrite(pwm_pin, -speed);
+        digitalWrite(in1, LOW);
+        analogWrite(pwm_pin, -speed > 255 ? 255 : -speed);
     }
+}
 
-    // Set the direction pins
-    
-    
-   
-    
-    // Ensure standby pin is set to active
-    digitalWrite(STBY, HIGH);
-
+int MotorDriver::applyDeadband(int v, uint8_t db) const {
+    if (v == 0 || db == 0) return v;
+    long mapped = (long)db + ((long)abs(v) * (255 - db)) / 255;
+    return v > 0 ? (int)mapped : -(int)mapped;
 }
 
 void MotorDriver::drive(int left_speed, int right_speed){
-    // Set left motor
-    setMotor(AIN1, PWMA, -left_speed);
+    if (!enabled) return;
+    setMotor(AIN1, PWMA, MOTOR_SIGN_LEFT  * applyDeadband(left_speed, db_left));
+    setMotor(BIN1, PWMB, MOTOR_SIGN_RIGHT * applyDeadband(right_speed, db_right));
+}
 
-    //Set right motor
-    setMotor(BIN1, PWMB, -right_speed);
-    /*
-    if (left_speed > 0) {
-        
-    } else if (left_speed < 0) {
-        setMotor(AIN2, AIN1, PWMA, -left_speed);
-    } else {
-        setMotor(AIN1, AIN2, PWMA, 0);
-    }
-
-    // Set right motor
-    if (right_speed > 0) {
-        setMotor(BIN1, BIN2, PWMB, right_speed);
-    } else if (right_speed < 0) {
-        setMotor(BIN2, BIN1, PWMB, -right_speed);
-    } else {
-        setMotor(BIN1, BIN2, PWMB, 0);
-    }
-    */
+void MotorDriver::driveRaw(int left_pwm, int right_pwm){
+    if (!enabled) return;
+    setMotor(AIN1, PWMA, MOTOR_SIGN_LEFT  * left_pwm);
+    setMotor(BIN1, PWMB, MOTOR_SIGN_RIGHT * right_pwm);
 }
 
 void MotorDriver::stop() {
   analogWrite(PWMA, 0);
   analogWrite(PWMB, 0);
   digitalWrite(AIN1, LOW);
-  digitalWrite(BIN1, LOW); 
+  digitalWrite(BIN1, LOW);
+}
+
+void MotorDriver::setDeadband(uint8_t left, uint8_t right){
+    db_left = left;
+    db_right = right;
 }

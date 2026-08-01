@@ -1,69 +1,349 @@
+// Self-balancing robot — Phase 0 firmware
+//
+// POWER PROTOCOL (see CLAUDE.md): motors are DISARMED at boot — PWM zero,
+// TB6612 in standby. No motion is possible until an explicit 'a' (arm) or
+// 'm' (motor test) serial command. 'x' is the emergency stop from any state.
+//
+// Serial console 115200 baud. Lines starting with "# " are human-readable;
+// bare CSV lines are telemetry (see TELEM_HEADER).
+
 #include <Wire.h>
+#include <EEPROM.h>
 #include "MPU6050.h"
 #include "kalman.h"
 #include "MotorDriver.h"
 #include "PIDController.h"
 
-#define ACC_LSB_PER_G 8192.0
-#define GYRO_LSB_PER_DPS 65.5
+#define ACC_LSB_PER_G 8192.0f
+#define GYRO_LSB_PER_DPS 65.5f
+
+// Control timing
+#define LOOP_US 5000UL          // 200 Hz control loop
+#define TELEM_DECIM 4           // telemetry every 4th cycle (50 Hz)
+
+// Safety
+#define TILT_CUTOFF_DEG 40.0f   // kill motors beyond this tilt
+#define ARM_TOL_DEG 5.0f        // must be this close to upright to arm
+#define ARM_HOLD_MS 2000UL      // ...continuously for this long
+#define MOTOR_TEST_TIMEOUT_MS 2000UL  // test PWM auto-zeroes without fresh cmd
+
+#define TRIM_CAP_CYCLES 1000    // 'T' trim capture: 1000 cycles = 5 s
+
+#define TELEM_HEADER "time_ms,raw_angle,kalman_angle,gyro_rate,p_term,i_term,d_term,motor_out,loop_dt_us"
+
+enum State : uint8_t { DISARMED, ARMING, BALANCING, MOTOR_TEST };
 
 MPU6050 mpu;
 Kalman kalman;
 MotorDriver motors;
+PIDController pid(25.0f, 5.0f, 0.5f);
 
-// PID variables
-double Setpoint = 0;     // Desired angle (upright)
-double Input = 0;        // Current angle from Kalman
-double Output = 0;       // PID output to motors
+State state = DISARMED;
+float angleTrim = 0.0f;         // setpoint offset: mechanical balance point
+bool streaming = false;
 
-double Kp = 25;
-double Ki = 5;
-double Kd = 0.5;
+uint32_t lastControlUs = 0;
+uint32_t armHoldStartMs = 0;
+bool armHolding = false;
+uint32_t motorTestLastCmdMs = 0;
+bool motorTestZeroed = true;
+int testPwmL = 0, testPwmR = 0;
 
+uint16_t trimCapRemaining = 0;
+float trimCapSum = 0.0f;
 
-unsigned long prevTime = 0;
+uint8_t telemCount = 0;
+char lineBuf[24];
+uint8_t lineLen = 0;
 
-PIDController myPID(Kp, Ki, Kd);
+// ---------------------------------------------------------------- EEPROM --
+struct Settings {
+  uint16_t magic;               // 0xB07A when valid
+  float kp, ki, kd, trim;
+  uint8_t dbLeft, dbRight;
+};
+#define SETTINGS_MAGIC 0xB07A
 
+void saveSettings() {
+  Settings s = { SETTINGS_MAGIC, pid.getKp(), pid.getKi(), pid.getKd(),
+                 angleTrim, motors.deadbandLeft(), motors.deadbandRight() };
+  EEPROM.put(0, s);
+  Serial.println(F("# saved to EEPROM"));
+}
+
+void loadSettings() {
+  Settings s;
+  EEPROM.get(0, s);
+  if (s.magic == SETTINGS_MAGIC) {
+    pid.setTunings(s.kp, s.ki, s.kd);
+    angleTrim = s.trim;
+    motors.setDeadband(s.dbLeft, s.dbRight);
+    Serial.println(F("# EEPROM settings loaded"));
+  } else {
+    Serial.println(F("# no EEPROM settings, using defaults"));
+  }
+}
+
+// ---------------------------------------------------------------- helpers --
+void printGains() {
+  Serial.print(F("# Kp=")); Serial.print(pid.getKp(), 3);
+  Serial.print(F(" Ki=")); Serial.print(pid.getKi(), 3);
+  Serial.print(F(" Kd=")); Serial.print(pid.getKd(), 3);
+  Serial.print(F(" trim=")); Serial.print(angleTrim, 2);
+  Serial.print(F(" db=")); Serial.print(motors.deadbandLeft());
+  Serial.print(F("/")); Serial.println(motors.deadbandRight());
+}
+
+void printStatus() {
+  Serial.print(F("# state="));
+  switch (state) {
+    case DISARMED:   Serial.print(F("DISARMED")); break;
+    case ARMING:     Serial.print(F("ARMING")); break;
+    case BALANCING:  Serial.print(F("BALANCING")); break;
+    case MOTOR_TEST: Serial.print(F("MOTOR_TEST")); break;
+  }
+  Serial.print(F(" stream=")); Serial.print(streaming ? 1 : 0);
+  Serial.print(F(" t_ms=")); Serial.println(millis());
+  printGains();
+}
+
+void printHelp() {
+  Serial.println(F("# ?  status | h help"));
+  Serial.println(F("# a  arm (hold upright 2s) | x  E-STOP -> disarm (immediate)"));
+  Serial.println(F("# p/i/d <v>  set gain | z  reset integral"));
+  Serial.println(F("# t <deg>  set angle trim | T  capture trim (avg 5s, hold at balance)"));
+  Serial.println(F("# b <l> [r]  motor deadband PWM"));
+  Serial.println(F("# s  toggle telemetry | c  gyro recal (still, disarmed)"));
+  Serial.println(F("# m  motor test mode; then l <pwm>, r <pwm> (-255..255), x exits"));
+  Serial.println(F("# W  save settings to EEPROM"));
+}
+
+void disarm(const __FlashStringHelper* why) {
+  motors.disable();
+  pid.reset();
+  testPwmL = testPwmR = 0;
+  state = DISARMED;
+  Serial.print(F("# DISARMED: "));
+  Serial.println(why);
+}
+
+// ------------------------------------------------------------------ serial --
+void parseLine(char* line) {
+  // strip leading spaces
+  while (*line == ' ') line++;
+  if (*line == '\0') return;
+  char cmd = *line;
+  char* arg = line + 1;
+  while (*arg == ' ') arg++;
+
+  switch (cmd) {
+    case '?': printStatus(); break;
+    case 'h': printHelp(); break;
+    case 'a':
+      if (state == DISARMED) {
+        state = ARMING;
+        armHolding = false;
+        Serial.println(F("# ARMING: hold upright ~2 s"));
+      } else {
+        Serial.println(F("# arm refused: not disarmed"));
+      }
+      break;
+    case 'p': pid.setTunings(atof(arg), pid.getKi(), pid.getKd()); printGains(); break;
+    case 'i': pid.setTunings(pid.getKp(), atof(arg), pid.getKd()); printGains(); break;
+    case 'd': pid.setTunings(pid.getKp(), pid.getKi(), atof(arg)); printGains(); break;
+    case 't':
+      if (*arg) { angleTrim = atof(arg); printGains(); }
+      else Serial.println(F("# t needs a value (or use T to capture)"));
+      break;
+    case 'T':
+      trimCapRemaining = TRIM_CAP_CYCLES;
+      trimCapSum = 0.0f;
+      Serial.println(F("# capturing trim: hold robot at balance point 5 s"));
+      break;
+    case 'z': pid.reset(); Serial.println(F("# integral reset")); break;
+    case 's':
+      streaming = !streaming;
+      if (streaming) Serial.println(F(TELEM_HEADER));
+      else Serial.println(F("# stream off"));
+      break;
+    case 'b': {
+      int l = atoi(arg);
+      char* sp = strchr(arg, ' ');
+      int r = sp ? atoi(sp + 1) : l;
+      motors.setDeadband((uint8_t)constrain(l, 0, 200), (uint8_t)constrain(r, 0, 200));
+      printGains();
+      break;
+    }
+    case 'c':
+      if (state == BALANCING || state == MOTOR_TEST) {
+        Serial.println(F("# gyro cal refused: disarm first"));
+      } else {
+        Serial.println(F("# gyro cal: keep robot STILL..."));
+        mpu.calibrateGyro(500);
+        Serial.println(F("# gyro cal done"));
+      }
+      break;
+    case 'm':
+      if (state == DISARMED) {
+        state = MOTOR_TEST;
+        testPwmL = testPwmR = 0;
+        motorTestZeroed = true;
+        motors.enable();
+        Serial.println(F("# MOTOR TEST: wheels OFF the ground, battery on."));
+        Serial.println(F("# l <pwm> / r <pwm> (-255..255); auto-zero after 2 s idle; x exits"));
+      } else {
+        Serial.println(F("# motor test refused: not disarmed"));
+      }
+      break;
+    case 'l':
+    case 'r':
+      if (state == MOTOR_TEST) {
+        int v = constrain(atoi(arg), -255, 255);
+        if (cmd == 'l') testPwmL = v; else testPwmR = v;
+        motorTestLastCmdMs = millis();
+        motorTestZeroed = false;
+        motors.driveRaw(testPwmL, testPwmR);
+        Serial.print(F("# test pwm L=")); Serial.print(testPwmL);
+        Serial.print(F(" R=")); Serial.println(testPwmR);
+      } else {
+        Serial.println(F("# l/r only in motor test mode ('m')"));
+      }
+      break;
+    case 'W': saveSettings(); break;
+    default:
+      Serial.print(F("# unknown cmd: ")); Serial.println(cmd);
+      break;
+  }
+}
+
+void handleSerial() {
+  while (Serial.available() > 0) {
+    char c = (char)Serial.read();
+    if (c == 'x' || c == 'X') {          // e-stop acts immediately, mid-line
+      lineLen = 0;
+      disarm(F("emergency stop"));
+      continue;
+    }
+    if (c == '\r') continue;
+    if (c == '\n') {
+      lineBuf[lineLen] = '\0';
+      lineLen = 0;
+      parseLine(lineBuf);
+    } else if (lineLen < sizeof(lineBuf) - 1) {
+      lineBuf[lineLen++] = c;
+    }
+  }
+}
+
+// ------------------------------------------------------------------- setup --
 void setup() {
   Serial.begin(115200);
   Wire.begin();
-  mpu.init();
-  motors.init();
+  Wire.setClock(400000);
 
-  
-  myPID.setTunings(Kp, Ki, Kd);
-  
+  motors.init();                 // driver in standby, PWM zero
+  Serial.println(F("# self-balancing-robot fw2 — motors DISARMED at boot"));
 
+  if (!mpu.init()) {
+    Serial.println(F("# WARNING: MPU6050 WHO_AM_I failed — check I2C wiring"));
+  }
+  loadSettings();
 
-  prevTime = millis();
-  Setpoint = 0; // upright
+  Serial.println(F("# gyro cal: keep robot still..."));
+  mpu.calibrateGyro(500);
+  Serial.println(F("# gyro cal done ('c' to redo)"));
+
+  int16_t ax, ay, az;
+  mpu.readAccelerometer(ax, ay, az);
+  kalman.setAngle(atan2f((float)ay / ACC_LSB_PER_G, (float)az / ACC_LSB_PER_G)
+                  * 180.0f / PI);
+
+  Serial.println(F("# 'h' for help, 'a' to arm, 'x' = E-STOP"));
+  printGains();
+  lastControlUs = micros();
 }
 
+// -------------------------------------------------------------------- loop --
 void loop() {
+  handleSerial();
+
+  uint32_t nowUs = micros();
+  uint32_t dtUs = nowUs - lastControlUs;
+  if (dtUs < LOOP_US) return;
+  lastControlUs = nowUs;
+  float dt = dtUs * 1e-6f;
+
   int16_t ax, ay, az, gx, gy, gz;
-  mpu.readAccelerometer(ax, ay, az);
-  mpu.readGyroscope(gx, gy, gz);
+  mpu.readMotion(ax, ay, az, gx, gy, gz);
 
   float ay_g = (float)ay / ACC_LSB_PER_G;
   float az_g = (float)az / ACC_LSB_PER_G;
   float gy_dps = (float)gy / GYRO_LSB_PER_DPS;
 
   float acc_angle = atan2f(ay_g, az_g) * 180.0f / PI;
+  float angle = kalman.getAngle(acc_angle, gy_dps, dt);
 
-  unsigned long now = millis();
-  float dt = (now - prevTime) * 0.001f;
-  prevTime = now;
+  if (trimCapRemaining > 0) {
+    trimCapSum += angle;
+    if (--trimCapRemaining == 0) {
+      angleTrim = trimCapSum / TRIM_CAP_CYCLES;
+      Serial.print(F("# trim captured: "));
+      Serial.println(angleTrim, 2);
+    }
+  }
 
-  float kalman_angle = kalman.getAngle(acc_angle, gy_dps, dt);
-  Input = kalman_angle;
+  int motorOut = 0;
 
-  Output = myPID.compute(Setpoint, Input, dt);
+  switch (state) {
+    case ARMING: {
+      if (fabsf(angle - angleTrim) < ARM_TOL_DEG) {
+        if (!armHolding) { armHolding = true; armHoldStartMs = millis(); }
+        else if (millis() - armHoldStartMs >= ARM_HOLD_MS) {
+          pid.reset();
+          kalman.setAngle(acc_angle);
+          motors.enable();
+          state = BALANCING;
+          Serial.println(F("# ARMED — balancing"));
+        }
+      } else {
+        armHolding = false;
+      }
+      break;
+    }
+    case BALANCING: {
+      if (fabsf(angle - angleTrim) > TILT_CUTOFF_DEG) {
+        disarm(F("tilt cutoff"));
+        break;
+      }
+      float out = pid.compute(angleTrim, angle, dt);
+      motorOut = (int)constrain(out, -255, 255);
+      motors.drive(motorOut, motorOut);
+      break;
+    }
+    case MOTOR_TEST: {
+      if (!motorTestZeroed &&
+          millis() - motorTestLastCmdMs > MOTOR_TEST_TIMEOUT_MS) {
+        testPwmL = testPwmR = 0;
+        motors.stop();
+        motorTestZeroed = true;
+        Serial.println(F("# test pwm auto-zeroed (2 s idle)"));
+      }
+      break;
+    }
+    case DISARMED:
+      break;
+  }
 
-  int drive = (int)constrain(Output, -255, 255);
-  motors.drive(drive, drive);
-
-  Serial.print(kalman_angle, 2);
-  Serial.print(',');
-  Serial.println(drive);
+  if (streaming && ++telemCount >= TELEM_DECIM) {
+    telemCount = 0;
+    Serial.print(millis());          Serial.print(',');
+    Serial.print(acc_angle, 2);      Serial.print(',');
+    Serial.print(angle, 2);          Serial.print(',');
+    Serial.print(gy_dps, 2);         Serial.print(',');
+    Serial.print(pid.pTerm(), 1);    Serial.print(',');
+    Serial.print(pid.iTerm(), 1);    Serial.print(',');
+    Serial.print(pid.dTerm(), 1);    Serial.print(',');
+    Serial.print(motorOut);          Serial.print(',');
+    Serial.println(dtUs);
+  }
 }
