@@ -105,7 +105,27 @@ alone) — that is unsafe and must never be reintroduced.
    must drive forward (toward the fall). If they drive backward, flip signs
    in ONE place and document it.
 
-### Phase 2 status (session 1, 2026-08-01 — IN PROGRESS)
+### Phase 2 — COMPLETE (2026-08-01, sessions 1-2)
+**Final gains: Kp=15, Ki=0.5, Kd=0.2 | trim=6.0 | deadband 23/19
+(fresh charge; 26/23 when sagged). All in EEPROM.**
+Justifying trials: 044 (46.5 s continuous balance, ended by logger
+window not a fall; wander +4.6..+8.3°, 0% saturation, mean output −5,
+i-term ~0) and 045 (43.5 s incl. two disturbance recoveries in 1.08 s /
+0.94 s, cleanly damped). Remaining known limitation: runaway drift —
+an angle-only balancer happily balances at constant velocity, so drift
+builds into speed until it falls (trial 045 run 2). That is the Phase 3
+velocity loop's job; do NOT try to fix it with more angle-loop tuning.
+Trim history: hand-capture 2.22 wrong (grip bias), friction-cone 8.61
+wrong (USB cable kickstand), floor-trial bisection → 6.0 correct.
+Chatter: ~10 Hz, ripple ~2°, cosmetic; if it bothers Phase 3, the fix
+is a gyro-rate D term in firmware, NOT higher Kd (Kd≥0.5 destabilizes
+via kalman-derivative phase lag — measured, trials 019 vs 020).
+Arming technique: Vish holds the robot ~4-5° back of his felt vertical
+(his feel reads −1..+2° on the sensor; gate is trim±5°).
+IMU: intermittent wiring fixed & shake-test validated (logs 040-043);
+run the shake test after ANY wiring work.
+
+### Phase 2 session 1 notes (superseded, kept for history)
 Working gains so far: **Kp=15, Ki=0.5, Kd=0.2** → 30-37 s balancing
 stretches, ripple ~1.1° once deadband recalibrated for sag (26/23).
 OPEN ISSUE — trim: hand-captured 2.22 is too far forward (constant
