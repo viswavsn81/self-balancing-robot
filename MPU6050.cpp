@@ -10,17 +10,24 @@ bool MPU6050::init() {
   // (registers readable but outputs static, trial_027) and only a
   // DEVICE_RESET + signal-path reset clears it.
   writeRegister(0x6B, 0x80); // DEVICE_RESET
-  delay(100);
+  delay(150);
   writeRegister(0x68, 0x07); // SIGNAL_PATH_RESET: gyro+accel+temp
-  delay(100);
+  delay(150);
   writeRegister(0x6B, 0x01); // Wake up, clock source = PLL with X gyro ref
+  delay(50);
   writeRegister(0x1A, 0x03); // DLPF ~44 Hz accel / 42 Hz gyro
   writeRegister(0x1B, 0x08); // Gyro full scale +/-500 dps (65.5 LSB/dps)
   writeRegister(0x1C, 0x08); // Accel full scale +/-4 g (8192 LSB/g)
 
-  uint8_t whoami = 0;
-  readRegisters(0x75, &whoami, 1);
-  return whoami == 0x68;
+  // WHO_AM_I with retries: right after a cold power-up or reset the core
+  // can need extra time before register reads return valid data.
+  for (uint8_t attempt = 0; attempt < 3; attempt++) {
+    uint8_t whoami = 0;
+    readRegisters(0x75, &whoami, 1);
+    if (whoami == 0x68) return true;
+    delay(50);
+  }
+  return false;
 }
 
 void MPU6050::readAccelerometer(int16_t& ax, int16_t& ay, int16_t& az) {
