@@ -20,6 +20,7 @@
 #include "kalman.h"
 #include "MotorDriver.h"
 #include "PIDController.h"
+#include "UnoBridge.h"
 
 #define ACC_LSB_PER_G 8192.0f
 // Datasheet value for ±500 dps is 65.5, but this chip (likely a clone)
@@ -126,6 +127,9 @@ uint8_t lineLen = 0;
 float vbat = 0.0f;              // smoothed battery voltage from A0 divider
 uint8_t vbatCount = 0;
 
+UnoBridge bridge;               // ESP32 wireless link (SoftwareSerial 2/4)
+uint8_t bridgeTelemCount = 0;
+
 // ---------------------------------------------------------------- EEPROM --
 struct Settings {
   uint16_t magic;
@@ -226,6 +230,7 @@ void disarm(const __FlashStringHelper* why) {
   state = DISARMED;
   Serial.print(F("# DISARMED: "));
   Serial.println(why);
+  bridge.sendLine("#", "DISARMED");
 }
 
 // ------------------------------------------------------------------ serial --
@@ -469,6 +474,7 @@ void setup() {
 
   motors.init();                 // driver in standby, PWM zero
   pinMode(LED_BUILTIN, OUTPUT);  // arming guide: lit = angle inside arm gate
+  bridge.begin();                // ESP32 link; same commands as USB console
   Serial.println(F("# self-balancing-robot fw3 — motors DISARMED at boot"));
 
   loadSettings();
@@ -486,8 +492,22 @@ void setup() {
 }
 
 // -------------------------------------------------------------------- loop --
+void handleBridge() {
+  char cmd[32];
+  bool estop;
+  if (bridge.poll(cmd, &estop)) {
+    parseLine(cmd);              // same parser as USB: identical semantics
+    bridge.sendLine("#", "ok");
+  }
+  if (estop) {
+    lineLen = 0;
+    disarm(F("emergency stop (bridge)"));
+  }
+}
+
 void loop() {
   handleSerial();
+  handleBridge();
 
   uint32_t nowUs = micros();
   uint32_t dtUs = nowUs - lastControlUs;
@@ -595,6 +615,7 @@ void loop() {
           armedAtMs = millis();
           state = BALANCING;
           Serial.println(F("# ARMED — station keeping"));
+          bridge.sendLine("#", "ARMED");
         }
       } else {
         motors.driveRaw(0, 0);
@@ -664,5 +685,16 @@ void loop() {
     Serial.print(distCm, 1);         Serial.print(',');
     Serial.print(yawDeg, 1);         Serial.print(',');
     Serial.println(vbat, 2);
+
+    // Compact mirror to the ESP32 link at ~4 Hz (fits the SoftwareSerial
+    // TX budget). Fields x10/x100 as integers: AVR snprintf has no %f.
+    if (++bridgeTelemCount >= 12) {
+      bridgeTelemCount = 0;
+      char b[40];
+      snprintf(b, sizeof(b), ",%ld,%d,%d,%d,%d,%d",
+               (long)millis(), (int)(angle * 10), motorOut,
+               (int)distCm, (int)yawDeg, (int)(vbat * 100));
+      bridge.sendLine("T", b);
+    }
   }
 }
