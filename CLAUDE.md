@@ -272,9 +272,14 @@ loop gets the same one-change-per-trial, log-driven protocol as Phase 2.
   `datasheets/sn74lvc2g14.pdf` — likely hardware-inverted); both-direction
   operation to be verified in the Phase 1 bench motor test.
 - Serial port on Vish's machine: `/dev/ttyUSB0` (Linux, dialout OK).
-- **ESP32 camera module (2026-08-02)**: Elegoo Smart Car kit camera board,
-  native Espressif USB-JTAG (`303a:1001`, so ESP32-S3-class; port
-  `/dev/ttyACM0` — never confuse with the Uno's `/dev/ttyUSB0`). Connects
+- **ESP32 camera module (2026-08-02)**: Elegoo Smart Car kit camera board.
+  Probed with esptool: **ESP32-S3 (QFN56) rev v0.2, 8 MB embedded PSRAM
+  (AP_3v3), 8 MB quad flash, native USB-Serial/JTAG**
+  (`303a:1001`, MAC dc:da:0c:3b:e4:18; port `/dev/ttyACM0` — never
+  confuse with the Uno's `/dev/ttyUSB0`). FQBN:
+  `esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=8M,PSRAM=opi,PartitionScheme=default_8MB`.
+  Camera sensor/pin-map still unconfirmed (firmware degrades to plain
+  WiFi-UART bridge if camera init fails). Connects
   to the Uno shield with the kit's dedicated UART cable on **hardware
   Serial pins 0/1** (shared with USB, selected by the shield's mode
   switch; level shifting is on the module — no custom wiring). Console
