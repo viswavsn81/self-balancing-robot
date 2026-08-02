@@ -65,6 +65,11 @@ alone) — that is unsafe and must never be reintroduced.
    off again.
 4. Never leave the firmware in a state where reconnecting battery power
    causes spontaneous motion.
+5. **ESP32 camera module power (2026-08-02)**: the ESP32 must NEVER have
+   USB-C and the robot UART cable connected at the same time. USB-C is
+   for flashing only, with the UART cable unplugged; in normal operation
+   it is UART-powered from the robot. (Tonight/overnight work: USB-C
+   only, UART disconnected.)
 
 ## Phase 0 — Repo audit and infrastructure (no robot needed)
 - Read every source file. Fix latent bugs before tuning. Known suspects:
@@ -267,6 +272,17 @@ loop gets the same one-change-per-trial, log-driven protocol as Phase 2.
   `datasheets/sn74lvc2g14.pdf` — likely hardware-inverted); both-direction
   operation to be verified in the Phase 1 bench motor test.
 - Serial port on Vish's machine: `/dev/ttyUSB0` (Linux, dialout OK).
+- **ESP32 camera module (2026-08-02)**: Elegoo Smart Car kit camera board,
+  native Espressif USB-JTAG (`303a:1001`, so ESP32-S3-class; port
+  `/dev/ttyACM0` — never confuse with the Uno's `/dev/ttyUSB0`). Connects
+  to the Uno shield with the kit's dedicated UART cable on **hardware
+  Serial pins 0/1** (shared with USB, selected by the shield's mode
+  switch; level shifting is on the module — no custom wiring). Console
+  protocol is identical on both links; the ESP32 wraps commands as
+  `$payload*XOR` frames. **Mode switch positions: [LABELS TBD — confirm
+  on the physical shield tomorrow]** one position = USB console/flashing,
+  other = camera link. Flashing the Uno requires the USB position.
+  Power rule: see POWER PROTOCOL item 5.
 - Robot mass: 389 g. IMU height: 5 cm above the floor.
 - **IMU conventions (verified empirically, trials 014/015)**: X axis runs
   along the wheel axle; +Y = taped FRONT. Pitch (fall) rate = **+gx**;
