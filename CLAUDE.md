@@ -194,6 +194,25 @@ Uno FLASHED with the frame-accepting bridge firmware and re-verified
 Cart-pole sim written but UNVALIDATED (tools/simulate.py header) — gain
 recommendations come from floor evidence. Phase 2 trial automation:
 `tools/balance_trial.py` (one command per trial + tuning_journal.md).
+### Swing-up autonomous session (2026-08-02 night — logs in commits)
+Robot geometry with the centered see-saw ruler bumper (measured by IMU):
+**rear rest +43.8°, front rest −39.5°, balance trim ≈ 15.0** (hand-hold
+said 12.9; hand-holds historically read ~2-4° low). Swing-up findings:
+- Forward (+) both-wheel kicks lift from BOTH rests (torque reaction
+  dominates). Rear rest is the launchpad (31° climb vs 52°).
+- Kick map from rear @250 ms: +55→apex 38°, +78→27°, +85→19°,
+  **+86/87→apex 13-16° (in-gate, three times!)**, +88+→over the top.
+  Over-the-top flip (front→rear): +140/300 ms.
+- **Catch blocked by firmware**: ARM_HOLD_MS 2000 can't complete during
+  a swing (apex dwell ~0.1 s). Fix written+compiled, NOT yet flashed:
+  `C` = catch mode (instant arm on |angle−trim|<5° & |rate|<60 dps,
+  10 s window) + asymmetric tilt cutoff (fwd 40°, back 26° — rear tip
+  would beach inside the old symmetric 40).
+- Attempts drift the robot ~30-50 cm each; keep it centered in the
+  webcam frame; trim 15.0 saved to EEPROM.
+**Next hands session: (1) flash the Uno (S1→USB + cable, then restore),
+(2) rerun the catch campaign — kick +86/87 with 'C' should land it.**
+
 ### Motor sysid RESULTS (2026-08-02, later session — logs/sysid_002.json)
 Webcam marker-tracking measurements, free wheels at 8.2 V:
 - **Left motor: 0.155 cm/s per PWM count; right: 0.118 — asymmetry 1.32×**

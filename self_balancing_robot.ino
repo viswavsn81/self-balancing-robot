@@ -34,7 +34,14 @@
 #define TELEM_DECIM 8           // telemetry every 8th cycle (25 Hz; fits 38400)
 
 // Safety
-#define TILT_CUTOFF_DEG 40.0f   // kill motors beyond this tilt
+// Asymmetric cutoff (see-saw ruler bumper, measured 2026-08-02): the rear
+// tip grounds at +43.8 abs (~+29 rel trim 15) — motors must cut BEFORE the
+// robot beaches on it; the front tip grounds at -39.5 abs (~-55 rel), so
+// the forward side keeps the original 40.
+#define TILT_CUTOFF_FWD_DEG 40.0f   // angle BELOW trim by more than this
+#define TILT_CUTOFF_BACK_DEG 26.0f  // angle ABOVE trim by more than this
+#define CATCH_RATE_MAX_DPS 60.0f    // max |pitch rate| for a swing-up catch
+#define CATCH_TIMEOUT_MS 10000UL
 #define ARM_TOL_DEG 5.0f        // must be this close to upright to arm
 #define ARM_HOLD_MS 2000UL      // ...continuously for this long
 #define MOTOR_TEST_TIMEOUT_MS 2000UL  // test PWM auto-zeroes without fresh cmd
@@ -75,7 +82,7 @@
 
 #define TELEM_HEADER "time_ms,raw_angle,kalman_angle,gyro_rate,p_term,i_term,d_term,motor_out,loop_dt_us,gyro_y,gyro_z,tilt_cmd,v_est,v_set,dist_cm,yaw_deg,vbat"
 
-enum State : uint8_t { DISARMED, ARMING, BALANCING, MOTOR_TEST };
+enum State : uint8_t { DISARMED, ARMING, CATCH, BALANCING, MOTOR_TEST };
 enum Mode : uint8_t { M_HOLD, M_GO, M_TURN };  // sub-mode while BALANCING
 
 MPU6050 mpu;
@@ -179,6 +186,7 @@ void printStatus() {
   switch (state) {
     case DISARMED:   Serial.print(F("DISARMED")); break;
     case ARMING:     Serial.print(F("ARMING")); break;
+    case CATCH:      Serial.print(F("CATCH")); break;
     case BALANCING:  Serial.print(F("BALANCING")); break;
     case MOTOR_TEST: Serial.print(F("MOTOR_TEST")); break;
   }
@@ -200,6 +208,7 @@ void printStatus() {
 void printHelp() {
   Serial.println(F("# ?  status | h help | x  E-STOP (immediate)"));
   Serial.println(F("# a  arm (hold upright 2s; then station-keeps)"));
+  Serial.println(F("# C  catch mode: arms INSTANTLY when swing crosses gate (10s window)"));
   Serial.println(F("# g <cm>  go distance | t <deg>  turn (+ = left/CCW)"));
   Serial.println(F("# v <cm/s>  velocity setpoint (0 = station keep)"));
   Serial.println(F("# p/i/d <v>  angle gains | vp/vi <v> vel gains | yp <v> yaw gain"));
@@ -300,6 +309,19 @@ void parseLine(char* line) {
     case 'o':
       if (*arg) { angleTrim = atof(arg); printGains(); }
       else Serial.println(F("# o needs a value (or use T to capture)"));
+      break;
+    case 'C':
+      if (!mpuOk) {
+        Serial.println(F("# catch refused: MPU offline"));
+      } else if (vbat > VBAT_PRESENT && vbat < VBAT_MIN_ARM) {
+        Serial.println(F("# catch refused: battery low"));
+      } else if (state == DISARMED) {
+        state = CATCH;
+        armHoldStartMs = millis();     // reused as catch-window start
+        Serial.println(F("# CATCH armed: waiting for gate crossing"));
+      } else {
+        Serial.println(F("# catch refused: not disarmed"));
+      }
       break;
     case 'T':
       trimCapRemaining = TRIM_CAP_CYCLES;
@@ -629,8 +651,28 @@ void loop() {
       }
       break;
     }
+    case CATCH: {
+      // Motors stay disabled until the swing crosses the gate slowly
+      // enough; then hand off to the balance controller instantly.
+      if (millis() - armHoldStartMs > CATCH_TIMEOUT_MS) {
+        disarm(F("catch window expired"));
+        break;
+      }
+      if (fabsf(angle - angleTrim) < ARM_TOL_DEG &&
+          fabsf(gx_dps) < CATCH_RATE_MAX_DPS) {
+        pid.reset();
+        resetMotion();
+        kalman.setAngle(acc_angle);
+        armedAtMs = millis();
+        motors.enable();
+        state = BALANCING;
+        Serial.println(F("# CAUGHT — balancing"));
+      }
+      break;
+    }
     case BALANCING: {
-      if (fabsf(angle - angleTrim) > TILT_CUTOFF_DEG) {
+      float rel = angle - angleTrim;
+      if (rel < -TILT_CUTOFF_FWD_DEG || rel > TILT_CUTOFF_BACK_DEG) {
         disarm(F("tilt cutoff"));
         break;
       }
