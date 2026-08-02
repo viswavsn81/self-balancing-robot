@@ -41,6 +41,11 @@
 
 #define TRIM_CAP_CYCLES 1000    // 'T' trim capture: 1000 cycles = 5 s
 
+// Arming guide: sub-motion PWM hum while the angle is inside the arm gate
+// (breakaway is ~20-24, so 15 makes sound but cannot move the wheels).
+// The pin-13 LED is hidden under the board on this build.
+#define ARM_HUM_PWM 15
+
 // Motion profile (units: cm, cm/s, deg)
 #define TILT_CMD_MAX 3.0f       // velocity loop authority over tilt setpoint
 #define V_CRUISE 12.0f          // 'g' cruise speed
@@ -236,7 +241,8 @@ void parseLine(char* line) {
       } else if (state == DISARMED) {
         state = ARMING;
         armHolding = false;
-        Serial.println(F("# ARMING: hold upright ~2 s"));
+        motors.enable();   // for the in-gate hum only; PWM stays sub-motion
+        Serial.println(F("# ARMING: hold upright ~2 s (hum = in gate)"));
       } else {
         Serial.println(F("# arm refused: not disarmed"));
       }
@@ -535,16 +541,17 @@ void loop() {
   switch (state) {
     case ARMING: {
       if (fabsf(angle - angleTrim) < ARM_TOL_DEG) {
+        motors.driveRaw(ARM_HUM_PWM, ARM_HUM_PWM);  // audible in-gate cue
         if (!armHolding) { armHolding = true; armHoldStartMs = millis(); }
         else if (millis() - armHoldStartMs >= ARM_HOLD_MS) {
           pid.reset();
           resetMotion();               // dist/yaw zeroed at arm point
           kalman.setAngle(acc_angle);
-          motors.enable();
           state = BALANCING;
           Serial.println(F("# ARMED — station keeping"));
         }
       } else {
+        motors.driveRaw(0, 0);
         armHolding = false;
       }
       break;
