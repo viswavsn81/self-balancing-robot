@@ -18,12 +18,20 @@ float PIDController::compute(float setpoint, float measured_value,
     else if (integral < out_min) integral = out_min;
     i_term = integral;
 
-    // Derivative on measurement, from the sensor rate: no setpoint kick,
-    // no differentiation noise, no filter lag (kalman-angle differentiation
-    // destabilized the ~10 Hz mode — trials 019/020).
-    d_term = -Kd * measured_rate;
+    // Derivative on measurement, by differentiating the (kalman-filtered)
+    // angle. NOTE: feeding the raw gyro rate here instead was tried and is
+    // UNSTABLE (trial 057): the filter's lag/attenuation at the ~10 Hz
+    // chatter frequency is load-bearing — the raw rate passes that chatter
+    // at full amplitude into the D gain where actuation lag turns it into
+    // excitation. measured_rate is accepted but deliberately unused.
+    (void)measured_rate;
+    if (first_compute) {
+        d_term = 0;
+        first_compute = false;
+    } else {
+        d_term = -Kd * (measured_value - prev_measured) / dt;
+    }
     prev_measured = measured_value;
-    first_compute = false;
 
     float output = p_term + i_term + d_term;
     if (output > out_max) output = out_max;
