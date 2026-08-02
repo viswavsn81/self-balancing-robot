@@ -29,7 +29,7 @@ import serial
 REPO = Path(__file__).resolve().parent.parent
 LOGS = REPO / "logs"
 JOURNAL = LOGS / "tuning_journal.md"
-PORT, BAUD = "/dev/ttyUSB0", 250000
+PORT, BAUD = "/dev/ttyUSB0", 38400
 
 
 def next_trial_path():

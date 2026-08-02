@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 import serial
 
-PORT, BAUD = "/dev/ttyUSB0", 250000
+PORT, BAUD = "/dev/ttyUSB0", 38400
 HSV_LO, HSV_HI = (95, 80, 60), (130, 255, 255)
 STEPS = [25, 35, 50, 70, 95, 120]
 REF_PWM = 60

@@ -32,7 +32,7 @@ import serial
 
 REPO = Path(__file__).resolve().parent.parent
 LOGS = REPO / "logs"
-BAUD_DEFAULT = 250000   # fw3+; use --baud 115200 for fw2 and earlier
+BAUD_DEFAULT = 38400   # fw3.2+ (camera-link shifter limit)
 
 
 def next_trial_path() -> Path:

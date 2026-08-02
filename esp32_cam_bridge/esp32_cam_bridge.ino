@@ -26,8 +26,14 @@
 #include "secrets.h"            // WIFI_SSID / WIFI_PASS (git-ignored)
 
 #define MDNS_NAME "robot-cam"
-#define UNO_BAUD 250000
-#define UNO_SERIAL Serial0      // UART0 -> kit cable (S3: GPIO43/44)
+#define UNO_BAUD 38400
+// Kit UART header wiring per Elegoo's stock S3 firmware
+// (ESP32_CameraServer_AP_2023_V1.3: Serial2.begin(9600, SERIAL_8N1, 3, 40)):
+// RX = GPIO3, TX = GPIO40. Stock runs 9600; 250000 was silent through the
+// module level shifter, so the link runs 38400 (Uno console matches).
+#define UNO_SERIAL Serial2
+#define UNO_RX_PIN 3
+#define UNO_TX_PIN 40
 
 WebSocketsServer ws(81);
 httpd_handle_t httpServer = NULL;
@@ -141,7 +147,7 @@ void wsEvent(uint8_t client, WStype_t type, uint8_t* payload, size_t len) {
 // ------------------------------------------------------------------ setup --
 void setup() {
   Serial.begin(115200);          // USB-CDC debug (bench only)
-  UNO_SERIAL.begin(UNO_BAUD);
+  UNO_SERIAL.begin(UNO_BAUD, SERIAL_8N1, UNO_RX_PIN, UNO_TX_PIN);
 
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);          // low latency beats power savings here

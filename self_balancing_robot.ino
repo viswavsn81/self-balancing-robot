@@ -11,7 +11,7 @@
 //   outer:  distance dead-reckoning + trapezoid -> velocity setpoint ('g')
 //   turn:   z-gyro yaw hold, differential PWM      ('t' relative turns)
 //
-// Serial console 250000 baud. Lines starting with "# " are human-readable;
+// Serial console 38400 baud (camera-link level shifter limit). Lines starting with "# " are human-readable;
 // bare CSV lines are telemetry (see TELEM_HEADER).
 
 #include <Wire.h>
@@ -31,7 +31,7 @@
 // Control timing
 #define LOOP_US 5000UL          // 200 Hz inner loop
 #define MID_DECIM 10            // middle/outer loops every 10th cycle (20 Hz)
-#define TELEM_DECIM 4           // telemetry every 4th cycle (50 Hz)
+#define TELEM_DECIM 8           // telemetry every 8th cycle (25 Hz; fits 38400)
 
 // Safety
 #define TILT_CUTOFF_DEG 40.0f   // kill motors beyond this tilt
@@ -490,7 +490,7 @@ void runMidLoops(float midDt) {
 
 // ------------------------------------------------------------------- setup --
 void setup() {
-  Serial.begin(250000);
+  Serial.begin(38400);   // shared console: USB and ESP32 link (shifter-limited)
   Wire.begin();
   Wire.setClock(400000);
 
