@@ -169,6 +169,26 @@ Python (cart-pole with the robot's approximate mass/height, which you should
 ask Vish to measure) to pre-screen gain ranges — but the log-driven physical
 protocol above is the source of truth.
 
+### Phase 3 status (2026-08-01 late session — IN PROGRESS)
+Firmware DONE and flashed: cascaded control (20 Hz velocity PI on
+commanded-PWM estimate w/ 3 s soft-start after arm, ±3° tilt clamp,
+vp 0.04 vi 0.02), trapezoidal `g <cm>`, z-gyro heading hold + `t <deg>`
+(trim moved to `o`), 250k baud, 16-col telemetry, hum-guided arming
+(sub-motion PWM 15 while in gate — the pin-13 LED is hidden). Trial 051:
+**station keeping PROVEN — 89.8 s, ±46 cm, returned to −10 cm.**
+NOT yet done: kvScale calibration (g-mission + tape measure; current
+0.235 cm/s/count is a guess ~5× high near hover), any successful `g`
+run, turns (blocked on new IMU — Z-gyro scale unstable ±34%).
+LESSONS (all log-verified): raw-gyro D term is UNSTABLE (trial 057) —
+kalman-differentiated D's lag is load-bearing, do not "fix" it again;
+velocity loop must never act on the release transient (trial 058
+spiral); late-session failures at fixed settings = battery sag until
+proven otherwise (trial 059).
+NEXT SESSION: (1) fresh charge + deadband recal (burst ramps),
+(2) g 80 + tape measure → set `k`, (3) hardware day when parts arrive:
+new GY-521 (fixes freezes + yaw), battery divider 10k/4.7k → A0 for
+firmware sag compensation, then turns + full missions.
+
 ## Phase 3 — Motion: point A to point B
 A balancing robot moves by *leaning*: to go forward, the controller
 deliberately tilts the setpoint forward and the balance loop chases the fall.
