@@ -47,19 +47,19 @@ void MPU6050::readMotion(int16_t& ax, int16_t& ay, int16_t& az,
 bool MPU6050::calibrateGyro(uint16_t samples) {
   int16_t oldX = gyroOffX, oldY = gyroOffY, oldZ = gyroOffZ;
   long sx = 0, sy = 0, sz = 0;
-  int16_t mnY = 32767, mxY = -32768;   // pitch axis is the stillness canary
+  int16_t mnX = 32767, mxX = -32768;   // pitch axis (X) is the stillness canary
   gyroOffX = gyroOffY = gyroOffZ = 0;
   for (uint16_t i = 0; i < samples; i++) {
     int16_t gx, gy, gz;
     readGyroscope(gx, gy, gz);
     sx += gx; sy += gy; sz += gz;
-    if (gy < mnY) mnY = gy;
-    if (gy > mxY) mxY = gy;
+    if (gx < mnX) mnX = gx;
+    if (gx > mxX) mxX = gx;
     delay(2);
   }
   // At rest the pitch gyro spans <20 LSB (~0.3 dps); a handled robot spans
   // hundreds. Reject the cal rather than store a moving average.
-  if ((long)mxY - mnY > 50) {
+  if ((long)mxX - mnX > 50) {
     gyroOffX = oldX; gyroOffY = oldY; gyroOffZ = oldZ;
     return false;
   }

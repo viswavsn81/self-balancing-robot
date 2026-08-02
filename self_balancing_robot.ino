@@ -15,7 +15,11 @@
 #include "PIDController.h"
 
 #define ACC_LSB_PER_G 8192.0f
-#define GYRO_LSB_PER_DPS 65.5f
+// Datasheet value for ±500 dps is 65.5, but this chip (likely a clone)
+// underreads by a constant 1.335x — measured in trial_014 by integrating
+// the gyro across hand tilts and comparing with the accel angle change
+// between stationary holds (ratio 1.335, consistent 26°-58° both ways).
+#define GYRO_LSB_PER_DPS 49.06f
 
 // Control timing
 #define LOOP_US 5000UL          // 200 Hz control loop
@@ -29,7 +33,8 @@
 
 #define TRIM_CAP_CYCLES 1000    // 'T' trim capture: 1000 cycles = 5 s
 
-#define TELEM_HEADER "time_ms,raw_angle,kalman_angle,gyro_rate,p_term,i_term,d_term,motor_out,loop_dt_us"
+// gyro_rate = pitch rate (X gyro, the control axis); gyro_y/z for diagnostics
+#define TELEM_HEADER "time_ms,raw_angle,kalman_angle,gyro_rate,p_term,i_term,d_term,motor_out,loop_dt_us,gyro_y,gyro_z"
 
 enum State : uint8_t { DISARMED, ARMING, BALANCING, MOTOR_TEST };
 
@@ -289,7 +294,7 @@ void loop() {
   lastControlUs = nowUs;
   float dt = dtUs * 1e-6f;
 
-  float acc_angle = 0, angle = 0, gy_dps = 0;
+  float acc_angle = 0, angle = 0, gy_dps = 0, gx_dps = 0, gz_dps = 0;
   if (!mpuOk) {
     // IMU likely on the battery rail: keep the console alive, retry quietly.
     if (millis() - lastMpuRetryMs > 2000) {
@@ -307,9 +312,14 @@ void loop() {
     float ay_g = (float)ay / ACC_LSB_PER_G;
     float az_g = (float)az / ACC_LSB_PER_G;
     gy_dps = (float)gy / GYRO_LSB_PER_DPS;
+    gx_dps = (float)gx / GYRO_LSB_PER_DPS;
+    gz_dps = (float)gz / GYRO_LSB_PER_DPS;
 
     acc_angle = atan2f(ay_g, az_g) * 180.0f / PI;
-    angle = kalman.getAngle(acc_angle, gy_dps, dt);
+    // Pitch (fall) axis is the X gyro: IMU X runs along the wheel axle,
+    // positive gx = angle increasing (verified empirically in trial_014).
+    // The original code fed gy here, which is why it barely balanced.
+    angle = kalman.getAngle(acc_angle, gx_dps, dt);
   }
 
   if (mpuOk && trimCapRemaining > 0) {
@@ -368,11 +378,13 @@ void loop() {
     Serial.print(millis());          Serial.print(',');
     Serial.print(acc_angle, 2);      Serial.print(',');
     Serial.print(angle, 2);          Serial.print(',');
-    Serial.print(gy_dps, 2);         Serial.print(',');
+    Serial.print(gx_dps, 2);         Serial.print(',');
     Serial.print(pid.pTerm(), 1);    Serial.print(',');
     Serial.print(pid.iTerm(), 1);    Serial.print(',');
     Serial.print(pid.dTerm(), 1);    Serial.print(',');
     Serial.print(motorOut);          Serial.print(',');
-    Serial.println(dtUs);
+    Serial.print(dtUs);              Serial.print(',');
+    Serial.print(gy_dps, 2);         Serial.print(',');
+    Serial.println(gz_dps, 2);
   }
 }
