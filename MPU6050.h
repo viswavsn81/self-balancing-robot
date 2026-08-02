@@ -20,6 +20,12 @@ public:
   // previous offsets if movement is detected during sampling (the board
   // resets on every serial port open, so boot cal can run mid-handling).
   bool calibrateGyro(uint16_t samples);
+  void getGyroOffsets(int16_t& x, int16_t& y, int16_t& z) const {
+    x = gyroOffX; y = gyroOffY; z = gyroOffZ;
+  }
+  void setGyroOffsets(int16_t x, int16_t y, int16_t z) {
+    gyroOffX = x; gyroOffY = y; gyroOffZ = z;
+  }
 
 private:
   const uint8_t MPU6050_ADDR = 0x68;

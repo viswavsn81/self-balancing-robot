@@ -65,15 +65,18 @@ uint8_t lineLen = 0;
 
 // ---------------------------------------------------------------- EEPROM --
 struct Settings {
-  uint16_t magic;               // 0xB07A when valid
+  uint16_t magic;               // 0xB07B when valid
   float kp, ki, kd, trim;
   uint8_t dbLeft, dbRight;
+  int16_t gbx, gby, gbz;        // last good gyro bias (LSB)
 };
-#define SETTINGS_MAGIC 0xB07A
+#define SETTINGS_MAGIC 0xB07B   // bump when the struct layout changes
 
 void saveSettings() {
   Settings s = { SETTINGS_MAGIC, pid.getKp(), pid.getKi(), pid.getKd(),
-                 angleTrim, motors.deadbandLeft(), motors.deadbandRight() };
+                 angleTrim, motors.deadbandLeft(), motors.deadbandRight(),
+                 0, 0, 0 };
+  mpu.getGyroOffsets(s.gbx, s.gby, s.gbz);
   EEPROM.put(0, s);
   Serial.println(F("# saved to EEPROM"));
 }
@@ -85,6 +88,9 @@ void loadSettings() {
     pid.setTunings(s.kp, s.ki, s.kd);
     angleTrim = s.trim;
     motors.setDeadband(s.dbLeft, s.dbRight);
+    // Fallback bias for boots where the robot is being handled and the
+    // fresh cal gets rejected; overwritten by any successful cal.
+    mpu.setGyroOffsets(s.gbx, s.gby, s.gbz);
     Serial.println(F("# EEPROM settings loaded"));
   } else {
     Serial.println(F("# no EEPROM settings, using defaults"));
@@ -191,10 +197,12 @@ void parseLine(char* line) {
         Serial.println(F("# gyro cal refused: disarm first"));
       } else {
         Serial.println(F("# gyro cal: keep robot STILL..."));
-        if (mpu.calibrateGyro(500))
+        if (mpu.calibrateGyro(500)) {
           Serial.println(F("# gyro cal done"));
-        else
+          saveSettings();
+        } else {
           Serial.println(F("# gyro cal REJECTED (movement) — old bias kept"));
+        }
       }
       break;
     case 'm':
@@ -251,10 +259,12 @@ void handleSerial() {
 
 void calibrateAndSeed() {
   Serial.println(F("# gyro cal: keep robot still..."));
-  if (mpu.calibrateGyro(500))
+  if (mpu.calibrateGyro(500)) {
     Serial.println(F("# gyro cal done ('c' to redo)"));
-  else
-    Serial.println(F("# gyro cal REJECTED (movement) — old bias kept, run 'c' when still"));
+    saveSettings();   // persist bias for boots where cal gets rejected
+  } else {
+    Serial.println(F("# gyro cal REJECTED (movement) — stored bias in use, run 'c' when still"));
+  }
   int16_t ax, ay, az;
   mpu.readAccelerometer(ax, ay, az);
   kalman.setAngle(atan2f((float)ay / ACC_LSB_PER_G, (float)az / ACC_LSB_PER_G)
