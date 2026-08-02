@@ -186,8 +186,10 @@ void parseLine(char* line) {
         Serial.println(F("# gyro cal refused: disarm first"));
       } else {
         Serial.println(F("# gyro cal: keep robot STILL..."));
-        mpu.calibrateGyro(500);
-        Serial.println(F("# gyro cal done"));
+        if (mpu.calibrateGyro(500))
+          Serial.println(F("# gyro cal done"));
+        else
+          Serial.println(F("# gyro cal REJECTED (movement) — old bias kept"));
       }
       break;
     case 'm':
@@ -244,8 +246,10 @@ void handleSerial() {
 
 void calibrateAndSeed() {
   Serial.println(F("# gyro cal: keep robot still..."));
-  mpu.calibrateGyro(500);
-  Serial.println(F("# gyro cal done ('c' to redo)"));
+  if (mpu.calibrateGyro(500))
+    Serial.println(F("# gyro cal done ('c' to redo)"));
+  else
+    Serial.println(F("# gyro cal REJECTED (movement) — old bias kept, run 'c' when still"));
   int16_t ax, ay, az;
   mpu.readAccelerometer(ax, ay, az);
   kalman.setAngle(atan2f((float)ay / ACC_LSB_PER_G, (float)az / ACC_LSB_PER_G)

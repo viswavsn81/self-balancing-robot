@@ -16,8 +16,10 @@ public:
   void readMotion(int16_t& ax, int16_t& ay, int16_t& az,
                   int16_t& gx, int16_t& gy, int16_t& gz);
   // Average `samples` gyro readings with the robot at rest; stores offsets
-  // subtracted by readMotion/readGyroscope. Robot must be still.
-  void calibrateGyro(uint16_t samples);
+  // subtracted by readMotion/readGyroscope. Returns false and keeps the
+  // previous offsets if movement is detected during sampling (the board
+  // resets on every serial port open, so boot cal can run mid-handling).
+  bool calibrateGyro(uint16_t samples);
 
 private:
   const uint8_t MPU6050_ADDR = 0x68;
