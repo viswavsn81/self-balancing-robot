@@ -183,12 +183,20 @@ preset (guessed right, camera OK, 8 MB PSRAM in use). Uno console now
 also accepts `$payload*XOR` frames (compile-checked, **not flashed**).
 Client: `tools/cam_client.py` (viewer + console, e-stop on exit; the
 ESP32 also sends an e-stop frame when the last WS client disconnects).
-TOMORROW to integrate (Vish's hands):
-1. Finish paused bench test 4 (slow deadband ramp) FIRST — robot still
-   runs yesterday's firmware; nothing changed on it overnight.
-2. Confirm shield mode-switch labels (USB vs camera) and record here.
-3. Flash the Uno with the frame-accepting firmware (USB position).
-4. Unplug ESP32 USB-C, connect kit UART cable (power rule 5!), switch
+UPDATE (2026-08-02 autonomous session): bench test 4 DONE via webcam
+marker tracking — breakaway L=20 R=18 at 8.2 V (free wheels, robot
+inverted; ±2-count stiction variance run-to-run), deadband set 19/17 in
+EEPROM. Motor mapping verified by pulse: firmware `l` = sharpie L =
+robot's true left. Arming hum (PWM 15) confirmed sub-motion (both
+wheels still at 16) — margin is only 1-3 counts, watch it under sag.
+Uno FLASHED with the frame-accepting bridge firmware and re-verified
+(disarm-at-boot, e-stop, framed `$?*3F` parsed, EEPROM intact).
+Cart-pole sim written but UNVALIDATED (tools/simulate.py header) — gain
+recommendations come from floor evidence. Phase 2 trial automation:
+`tools/balance_trial.py` (one command per trial + tuning_journal.md).
+REMAINING for Vish's hands:
+1. Confirm shield mode-switch labels (USB vs camera) and record here.
+2. Unplug ESP32 USB-C, connect kit UART cable (power rule 5!), switch
    to camera position, then: `python3 tools/cam_client.py` → `?` should
    answer over WiFi. Then wireless bench trials.
 
