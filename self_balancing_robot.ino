@@ -60,6 +60,10 @@
 // hover jitter); count it as zero so dead reckoning doesn't accumulate
 // phantom distance while station-keeping (trial 052: -75 fictitious cm).
 #define VEL_EST_DEADZONE 8.0f
+// Velocity loop fades in over this long after arming: the release transient
+// otherwise reads as "speeding forward", and the loop's backward tilt demand
+// feeds the non-minimum-phase spiral that toppled every arm in trial 058.
+#define VEL_RAMP_MS 3000UL
 
 #define TELEM_HEADER "time_ms,raw_angle,kalman_angle,gyro_rate,p_term,i_term,d_term,motor_out,loop_dt_us,gyro_y,gyro_z,tilt_cmd,v_est,v_set,dist_cm,yaw_deg"
 
@@ -90,8 +94,8 @@ float trimCapSum = 0.0f;
 
 // Middle/outer loop state
 float kvScale = 0.235f;         // cm/s per PWM count ('k', calibrate on floor)
-float kvp = 0.08f;              // deg tilt per cm/s velocity error
-float kvi = 0.04f;              // deg tilt per cm/s-s
+float kvp = 0.04f;              // deg tilt per cm/s velocity error
+float kvi = 0.02f;              // deg tilt per cm/s-s
 float kyp = 2.0f;               // differential PWM per deg yaw error
 float velLpf = 0.0f;            // filtered commanded PWM
 float vEst = 0.0f;              // cm/s (estimated)
@@ -100,6 +104,7 @@ float vSetTarget = 0.0f;        // requested setpoint ('v' or profile)
 float velI = 0.0f;              // velocity integral, in deg of tilt
 float tiltCmd = 0.0f;           // deg; + = lean forward (angle setpoint down)
 float distCm = 0.0f;            // dead-reckoned since arm
+uint32_t armedAtMs = 0;         // for the velocity-loop soft-start ramp
 float goTargetCm = 0.0f;
 float yawDeg = 0.0f;            // integrated z-gyro since arm
 float yawTarget = 0.0f;
@@ -428,6 +433,12 @@ void runMidLoops(float midDt) {
   tiltCmd = kvp * velErr + velI;
   if (tiltCmd > TILT_CMD_MAX) tiltCmd = TILT_CMD_MAX;
   else if (tiltCmd < -TILT_CMD_MAX) tiltCmd = -TILT_CMD_MAX;
+
+  // Soft-start: fade the velocity loop in after arming
+  uint32_t sinceArm = millis() - armedAtMs;
+  if (sinceArm < VEL_RAMP_MS) {
+    tiltCmd *= (float)sinceArm / VEL_RAMP_MS;
+  }
 }
 
 // ------------------------------------------------------------------- setup --
@@ -547,6 +558,7 @@ void loop() {
           pid.reset();
           resetMotion();               // dist/yaw zeroed at arm point
           kalman.setAngle(acc_angle);
+          armedAtMs = millis();
           state = BALANCING;
           Serial.println(F("# ARMED — station keeping"));
         }
