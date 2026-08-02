@@ -105,6 +105,25 @@ alone) — that is unsafe and must never be reintroduced.
    must drive forward (toward the fall). If they drive backward, flip signs
    in ONE place and document it.
 
+### Phase 2 status (session 1, 2026-08-01 — IN PROGRESS)
+Working gains so far: **Kp=15, Ki=0.5, Kd=0.2** → 30-37 s balancing
+stretches, ripple ~1.1° once deadband recalibrated for sag (26/23).
+OPEN ISSUE — trim: hand-captured 2.22 is too far forward (constant
+forward sprint); friction-cone estimate 8.61 is too far backward
+(instant backward flip; measurement was biased by the USB cable acting
+as a kickstand — distrust free-standing rest angles unless the cable is
+slack and vertical). Bracketed to (4.0, 8.61); **next action: trial at
+trim 6.0**, then bisect further. Battery went to charge after ~10
+trials; deadband will need re-checking on the fresh charge (probably
+back near 23/23). Kd=0.5 destabilizes (kalman-derivative phase at the
+10 Hz chatter); if more damping is needed, switch the D term to raw
+gyro rate (gx) in firmware rather than raising Kd.
+HARDWARE WATCH: MPU6050 froze 4× this session (I2C alive, outputs
+static), always near handling/motor transients — suspect a marginal
+wire/solder joint to the IMU; ask Vish to reseat/inspect before next
+session. Firmware watchdog (0.5 s bit-identical raws) catches it and
+disarms; DEVICE_RESET at init clears it.
+
 ## Phase 2 — Balance tuning (the "servo tuning" the PID way)
 Tuning protocol — follow it mechanically, one trial per step, ~10–20 s each,
 robot released upright on a hard floor with Vish spotting it:
