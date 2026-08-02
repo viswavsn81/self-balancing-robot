@@ -208,8 +208,11 @@ loop gets the same one-change-per-trial, log-driven protocol as Phase 2.
   `datasheets/sn74lvc2g14.pdf` — likely hardware-inverted); both-direction
   operation to be verified in the Phase 1 bench motor test.
 - Serial port on Vish's machine: `/dev/ttyUSB0` (Linux, dialout OK).
-- Robot mass, IMU height: TBD (only needed if we build the optional
-  simulation).
+- Robot mass: 389 g. IMU height: 5 cm above the floor.
+- **Workflow (2026-08-01)**: the AGENT runs `tools/log_trial.py` and sends
+  all serial commands itself. Vish does ONLY physical actions; tell him
+  exactly what to do with his hands and wait for his "done" before sending
+  any command that depends on it.
 
 ## Definition of done
 The robot, started upright, executes `g 150` (1.5 m forward) then `t 180`
