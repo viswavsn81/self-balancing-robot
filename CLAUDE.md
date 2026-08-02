@@ -209,6 +209,12 @@ loop gets the same one-change-per-trial, log-driven protocol as Phase 2.
   operation to be verified in the Phase 1 bench motor test.
 - Serial port on Vish's machine: `/dev/ttyUSB0` (Linux, dialout OK).
 - Robot mass: 389 g. IMU height: 5 cm above the floor.
+- **IMU conventions (verified empirically, trials 014/015)**: X axis runs
+  along the wheel axle; +Y = taped FRONT. Pitch (fall) rate = **+gx**;
+  forward tilt = angle DECREASING. Gyro sensitivity is NON-datasheet:
+  49.06 LSB/dps at ±500 dps config (clone chip underreads 1.335×; scale
+  measured by integral-vs-accel-angle method). Balance trim ≈ +2.22°,
+  motor deadband ≈ PWM 24 both wheels at full charge (both in EEPROM).
 - **Workflow (2026-08-01)**: the AGENT runs `tools/log_trial.py` and sends
   all serial commands itself. Vish does ONLY physical actions; tell him
   exactly what to do with his hands and wait for his "done" before sending
