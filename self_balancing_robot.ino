@@ -16,6 +16,7 @@
 
 #include <Wire.h>
 #include <EEPROM.h>
+#include <avr/interrupt.h>
 #include "MPU6050.h"
 #include "kalman.h"
 #include "MotorDriver.h"
@@ -42,6 +43,16 @@
 #define TILT_CUTOFF_BACK_DEG 26.0f  // angle ABOVE trim by more than this
 #define CATCH_RATE_MAX_DPS 60.0f    // max |pitch rate| for a swing-up catch
 #define CATCH_TIMEOUT_MS 10000UL
+
+// Firmware-native swing-up ('S'): from a ruler rest, a settle pre-pulse,
+// then bang-bang energy pumping under the 200 Hz loop — drive forward
+// (torque reaction lifts, empirically from BOTH rests) while the body
+// moves toward upright, coast while it moves away — with the native
+// instant catch. Feedback beats the open-loop kick variance that killed
+// the remote campaign (logs 063/064).
+#define SWING_PUMP_PWM 85
+#define SWING_SETTLE_PWM 30
+#define SWING_TIMEOUT_MS 8000UL
 #define ARM_TOL_DEG 5.0f        // must be this close to upright to arm
 #define ARM_HOLD_MS 2000UL      // ...continuously for this long
 #define MOTOR_TEST_TIMEOUT_MS 2000UL  // test PWM auto-zeroes without fresh cmd
@@ -82,7 +93,7 @@
 
 #define TELEM_HEADER "time_ms,raw_angle,kalman_angle,gyro_rate,p_term,i_term,d_term,motor_out,loop_dt_us,gyro_y,gyro_z,tilt_cmd,v_est,v_set,dist_cm,yaw_deg,vbat"
 
-enum State : uint8_t { DISARMED, ARMING, CATCH, BALANCING, MOTOR_TEST };
+enum State : uint8_t { DISARMED, ARMING, CATCH, SWINGUP, BALANCING, MOTOR_TEST };
 enum Mode : uint8_t { M_HOLD, M_GO, M_TURN };  // sub-mode while BALANCING
 
 MPU6050 mpu;
@@ -187,6 +198,7 @@ void printStatus() {
     case DISARMED:   Serial.print(F("DISARMED")); break;
     case ARMING:     Serial.print(F("ARMING")); break;
     case CATCH:      Serial.print(F("CATCH")); break;
+    case SWINGUP:    Serial.print(F("SWINGUP")); break;
     case BALANCING:  Serial.print(F("BALANCING")); break;
     case MOTOR_TEST: Serial.print(F("MOTOR_TEST")); break;
   }
@@ -209,6 +221,8 @@ void printHelp() {
   Serial.println(F("# ?  status | h help | x  E-STOP (immediate)"));
   Serial.println(F("# a  arm (hold upright 2s; then station-keeps)"));
   Serial.println(F("# C  catch mode: arms INSTANTLY when swing crosses gate (10s window)"));
+  Serial.println(F("# S  swing-up: self-erect from ruler rest (pump + catch, 8s cap)"));
+  Serial.println(F("# R  reboot into bootloader (remote reflash)"));
   Serial.println(F("# g <cm>  go distance | t <deg>  turn (+ = left/CCW)"));
   Serial.println(F("# v <cm/s>  velocity setpoint (0 = station keep)"));
   Serial.println(F("# p/i/d <v>  angle gains | vp/vi <v> vel gains | yp <v> yaw gain"));
@@ -321,6 +335,30 @@ void parseLine(char* line) {
         Serial.println(F("# CATCH armed: waiting for gate crossing"));
       } else {
         Serial.println(F("# catch refused: not disarmed"));
+      }
+      break;
+    case 'S':
+      if (!mpuOk) {
+        Serial.println(F("# swingup refused: MPU offline"));
+      } else if (vbat > VBAT_PRESENT && vbat < VBAT_MIN_ARM) {
+        Serial.println(F("# swingup refused: battery low"));
+      } else if (state == DISARMED) {
+        state = SWINGUP;
+        armHoldStartMs = millis();
+        motors.enable();
+        Serial.println(F("# SWINGUP: pumping"));
+      } else {
+        Serial.println(F("# swingup refused: not disarmed"));
+      }
+      break;
+    case 'R':
+      Serial.println(F("# rebooting to bootloader"));
+      Serial.flush();
+      {
+        // Direct jump to optiboot (0x7E00 on a 512-byte-bootloader 328P).
+        // WDT reset would skip the bootloader (optiboot boot-cause check).
+        cli();
+        asm volatile ("jmp 0x7E00");
       }
       break;
     case 'T':
@@ -667,6 +705,36 @@ void loop() {
         motors.enable();
         state = BALANCING;
         Serial.println(F("# CAUGHT — balancing"));
+      }
+      break;
+    }
+    case SWINGUP: {
+      if (millis() - armHoldStartMs > SWING_TIMEOUT_MS) {
+        disarm(F("swingup timeout"));
+        break;
+      }
+      float rel = angle - angleTrim;
+      // native catch, same condition as CATCH state
+      if (fabsf(rel) < ARM_TOL_DEG && fabsf(gx_dps) < CATCH_RATE_MAX_DPS) {
+        pid.reset();
+        resetMotion();
+        kalman.setAngle(acc_angle);
+        armedAtMs = millis();
+        state = BALANCING;
+        Serial.println(F("# CAUGHT (swingup) — balancing"));
+        break;
+      }
+      // bang-bang energy pump: |rel| shrinking = moving toward upright.
+      // d|rel|/dt = sign(rel) * rate; pump while it is negative.
+      float closing = (rel > 0 ? gx_dps : -gx_dps);
+      if (closing < -5.0f) {
+        motors.driveRaw(SWING_PUMP_PWM, SWING_PUMP_PWM);
+      } else if (closing > 5.0f) {
+        motors.driveRaw(0, 0);
+      } else {
+        // near-stationary on the rest: seed motion with the settle pulse
+        motors.driveRaw(SWING_SETTLE_PWM + (int)(millis() % 40),
+                        SWING_SETTLE_PWM + (int)(millis() % 40));
       }
       break;
     }

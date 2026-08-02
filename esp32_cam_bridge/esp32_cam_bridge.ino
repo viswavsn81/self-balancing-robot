@@ -36,6 +36,11 @@
 #define UNO_TX_PIN 40
 
 WebSocketsServer ws(81);
+// Remote Uno reflash: avrdude -c arduino -P net:robot-cam.local:2323
+// Flow: send 'R' over WS (Uno jumps to optiboot), avrdude retries sync
+// through this raw TCP<->UART bridge at 115200; console returns to
+// 38400 when the client disconnects.
+WiFiServer flashServer(2323);
 httpd_handle_t httpServer = NULL;
 bool cameraOk = false;
 uint32_t framesServed = 0;
@@ -173,12 +178,41 @@ void setup() {
   startHttp();
   ws.begin();
   ws.onEvent(wsEvent);
+  flashServer.begin();
   Serial.printf("ready: http://%s.local/  ws://%s.local:81/\n",
                 MDNS_NAME, MDNS_NAME);
 }
 
 // ------------------------------------------------------------------- loop --
 void loop() {
+  // Raw flash bridge takes over the UART while a client is connected
+  WiFiClient fc = flashServer.accept();
+  if (fc) {
+    Serial.println("flash bridge: client connected, 115200");
+    UNO_SERIAL.updateBaudRate(115200);
+    uint8_t buf[256];
+    uint32_t lastActivity = millis();
+    while (fc.connected() && millis() - lastActivity < 30000) {
+      int n = fc.available();
+      if (n > 0) {
+        n = fc.read(buf, min(n, (int)sizeof(buf)));
+        UNO_SERIAL.write(buf, n);
+        lastActivity = millis();
+      }
+      n = UNO_SERIAL.available();
+      if (n > 0) {
+        n = UNO_SERIAL.read(buf, min(n, (int)sizeof(buf)));
+        fc.write(buf, n);
+        lastActivity = millis();
+      }
+      ws.loop();          // keep WS alive-ish during long flashes
+      delay(1);
+    }
+    fc.stop();
+    UNO_SERIAL.updateBaudRate(UNO_BAUD);
+    Serial.println("flash bridge: closed, back to console baud");
+  }
+
   ws.loop();
 
   // UART -> WebSocket, line at a time
