@@ -25,6 +25,10 @@ class MotorDriver{
         void stop();               // PWM to zero (driver stays enabled)
 
         void setDeadband(uint8_t left, uint8_t right);
+        // Battery-sag compensation: drive() output (incl. deadband mapping)
+        // is multiplied by this factor (V_ref / V_battery). driveRaw is
+        // intentionally unscaled.
+        void setVoltComp(float f) { volt_comp = f; }
         uint8_t deadbandLeft() const { return db_left; }
         uint8_t deadbandRight() const { return db_right; }
 
@@ -33,6 +37,7 @@ class MotorDriver{
         int applyDeadband(int v, uint8_t db) const;
         bool enabled = false;
         uint8_t db_left = 0, db_right = 0;
+        float volt_comp = 1.0f;
 };
 
 #endif

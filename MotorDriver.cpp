@@ -60,8 +60,10 @@ int MotorDriver::applyDeadband(int v, uint8_t db) const {
 
 void MotorDriver::drive(int left_speed, int right_speed){
     if (!enabled) return;
-    setMotor(AIN1, PWMA, MOTOR_SIGN_LEFT  * applyDeadband(left_speed, db_left));
-    setMotor(BIN1, PWMB, MOTOR_SIGN_RIGHT * applyDeadband(right_speed, db_right));
+    int l = (int)(applyDeadband(left_speed, db_left) * volt_comp);
+    int r = (int)(applyDeadband(right_speed, db_right) * volt_comp);
+    setMotor(AIN1, PWMA, MOTOR_SIGN_LEFT  * l);
+    setMotor(BIN1, PWMB, MOTOR_SIGN_RIGHT * r);
 }
 
 void MotorDriver::driveRaw(int left_pwm, int right_pwm){

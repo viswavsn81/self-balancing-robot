@@ -41,6 +41,14 @@
 
 #define TRIM_CAP_CYCLES 1000    // 'T' trim capture: 1000 cycles = 5 s
 
+// Battery divider on A0: Vbat -> 10k -> A0 -> 4.7k -> GND, so
+// V = ADC * 5/1023 * (14.7/4.7). Full 2S pack 8.4 V reads ~2.69 V (~550).
+#define VBAT_PIN A0
+#define VBAT_V_PER_COUNT (5.0f / 1023.0f * (14.7f / 4.7f))
+#define VBAT_REF 8.2f           // voltage at which deadband/gains were tuned
+#define VBAT_MIN_ARM 6.8f       // refuse to arm below this (pack nearly done)
+#define VBAT_PRESENT 5.0f       // below this = running on USB, no comp
+
 // Arming guide: sub-motion PWM hum while the angle is inside the arm gate
 // (breakaway is ~20-24, so 15 makes sound but cannot move the wheels).
 // The pin-13 LED is hidden under the board on this build.
@@ -65,7 +73,7 @@
 // feeds the non-minimum-phase spiral that toppled every arm in trial 058.
 #define VEL_RAMP_MS 3000UL
 
-#define TELEM_HEADER "time_ms,raw_angle,kalman_angle,gyro_rate,p_term,i_term,d_term,motor_out,loop_dt_us,gyro_y,gyro_z,tilt_cmd,v_est,v_set,dist_cm,yaw_deg"
+#define TELEM_HEADER "time_ms,raw_angle,kalman_angle,gyro_rate,p_term,i_term,d_term,motor_out,loop_dt_us,gyro_y,gyro_z,tilt_cmd,v_est,v_set,dist_cm,yaw_deg,vbat"
 
 enum State : uint8_t { DISARMED, ARMING, BALANCING, MOTOR_TEST };
 enum Mode : uint8_t { M_HOLD, M_GO, M_TURN };  // sub-mode while BALANCING
@@ -114,6 +122,9 @@ uint8_t midCount = 0;
 uint8_t telemCount = 0;
 char lineBuf[24];
 uint8_t lineLen = 0;
+
+float vbat = 0.0f;              // smoothed battery voltage from A0 divider
+uint8_t vbatCount = 0;
 
 // ---------------------------------------------------------------- EEPROM --
 struct Settings {
@@ -181,6 +192,7 @@ void printStatus() {
   Serial.print(F(" stream=")); Serial.print(streaming ? 1 : 0);
   Serial.print(F(" dist=")); Serial.print(distCm, 1);
   Serial.print(F(" yaw=")); Serial.print(yawDeg, 1);
+  Serial.print(F(" vbat=")); Serial.print(vbat, 2);
   Serial.print(F(" t_ms=")); Serial.println(millis());
   printGains();
 }
@@ -243,6 +255,9 @@ void parseLine(char* line) {
     case 'a':
       if (!mpuOk) {
         Serial.println(F("# arm refused: MPU6050 offline (battery off?)"));
+      } else if (vbat > VBAT_PRESENT && vbat < VBAT_MIN_ARM) {
+        Serial.print(F("# arm refused: battery low ("));
+        Serial.print(vbat, 2); Serial.println(F("V) — charge it"));
       } else if (state == DISARMED) {
         state = ARMING;
         armHolding = false;
@@ -349,6 +364,11 @@ void parseLine(char* line) {
       } else {
         Serial.println(F("# l/r only in motor test mode ('m')"));
       }
+      break;
+    case 'V':
+      Serial.print(F("# vbat=")); Serial.print(vbat, 2);
+      Serial.print(F("V (raw A0=")); Serial.print(analogRead(VBAT_PIN));
+      Serial.println(F(")"));
       break;
     case 'W': saveSettings(); break;
     default:
@@ -474,6 +494,20 @@ void loop() {
   if (dtUs < LOOP_US) return;
   lastControlUs = nowUs;
   float dt = dtUs * 1e-6f;
+
+  // Battery voltage: sample every 100th cycle (2 Hz), light smoothing
+  if (++vbatCount >= 100) {
+    vbatCount = 0;
+    float v = analogRead(VBAT_PIN) * VBAT_V_PER_COUNT;
+    vbat = (vbat == 0.0f) ? v : vbat + 0.2f * (v - vbat);
+    // Sag compensation: same physical torque per commanded count as at
+    // the calibration voltage. Only when actually on battery power.
+    if (vbat > VBAT_PRESENT) {
+      motors.setVoltComp(constrain(VBAT_REF / vbat, 0.8f, 1.4f));
+    } else {
+      motors.setVoltComp(1.0f);
+    }
+  }
 
   float acc_angle = 0, angle = 0, gy_dps = 0, gx_dps = 0, gz_dps = 0;
   if (!mpuOk) {
@@ -628,6 +662,7 @@ void loop() {
     Serial.print(vEst, 1);           Serial.print(',');
     Serial.print(vSet, 1);           Serial.print(',');
     Serial.print(distCm, 1);         Serial.print(',');
-    Serial.println(yawDeg, 1);
+    Serial.print(yawDeg, 1);         Serial.print(',');
+    Serial.println(vbat, 2);
   }
 }
