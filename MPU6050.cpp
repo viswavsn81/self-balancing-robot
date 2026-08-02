@@ -6,6 +6,13 @@ bool MPU6050::init() {
   // Without this, a missing/unpowered MPU hangs the AVR Wire library
   // forever inside the first transaction (observed on USB-only power).
   Wire.setWireTimeout(3000, true);
+  // Full device reset first: the sensor core on these clones can freeze
+  // (registers readable but outputs static, trial_027) and only a
+  // DEVICE_RESET + signal-path reset clears it.
+  writeRegister(0x6B, 0x80); // DEVICE_RESET
+  delay(100);
+  writeRegister(0x68, 0x07); // SIGNAL_PATH_RESET: gyro+accel+temp
+  delay(100);
   writeRegister(0x6B, 0x01); // Wake up, clock source = PLL with X gyro ref
   writeRegister(0x1A, 0x03); // DLPF ~44 Hz accel / 42 Hz gyro
   writeRegister(0x1B, 0x08); // Gyro full scale +/-500 dps (65.5 LSB/dps)

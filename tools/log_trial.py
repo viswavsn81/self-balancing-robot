@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse
+import os
 import re
 import select
 import sys
@@ -120,17 +121,24 @@ def main() -> int:
         print(f"logging to {path} — Ctrl-C to stop; input is forwarded to robot")
         deadline = time.monotonic() + args.seconds if args.seconds else None
         stdin_open = True
+        stdin_buf = b""
         try:
             while deadline is None or time.monotonic() < deadline:
-                # forward operator commands typed on stdin
+                # Forward operator commands from stdin. Use raw os.read, not
+                # readline(): Python's stdin buffering slurps several lines
+                # per read, and lines stuck in the buffer don't wake select()
+                # — commands were arriving on the robot minutes late.
                 if stdin_open:
                     r, _, _ = select.select([sys.stdin], [], [], 0.2)
                     if r:
-                        cmd = sys.stdin.readline()
-                        if not cmd:      # EOF: stop forwarding, keep logging
+                        chunk = os.read(sys.stdin.fileno(), 4096)
+                        if not chunk:    # EOF: stop forwarding, keep logging
                             stdin_open = False
                             continue
-                        ser.write(cmd.encode("ascii", errors="ignore"))
+                        stdin_buf += chunk
+                        while b"\n" in stdin_buf:
+                            cmd, stdin_buf = stdin_buf.split(b"\n", 1)
+                            ser.write(cmd + b"\n")
                 else:
                     time.sleep(0.2)
         except KeyboardInterrupt:

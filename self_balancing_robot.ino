@@ -319,6 +319,32 @@ void loop() {
     int16_t ax, ay, az, gx, gy, gz;
     mpu.readMotion(ax, ay, az, gx, gy, gz);
 
+    // Freshness watchdog: a live sensor always jitters by >=1 LSB. If all
+    // six raw values are bit-identical for 100 cycles (0.5 s), the MPU's
+    // measurement core has frozen (I2C still answers!) — the tilt cutoff
+    // would never fire on frozen data, so disarm NOW and force a re-init.
+    static int16_t lastRaw[6];
+    static uint8_t staleCount = 0;
+    if (ax == lastRaw[0] && ay == lastRaw[1] && az == lastRaw[2] &&
+        gx == lastRaw[3] && gy == lastRaw[4] && gz == lastRaw[5]) {
+      if (staleCount < 255) staleCount++;
+    } else {
+      staleCount = 0;
+    }
+    lastRaw[0] = ax; lastRaw[1] = ay; lastRaw[2] = az;
+    lastRaw[3] = gx; lastRaw[4] = gy; lastRaw[5] = gz;
+    if (staleCount >= 100) {
+      staleCount = 0;
+      mpuOk = false;
+      lastMpuRetryMs = 0;          // retry (with device reset) immediately
+      if (state == BALANCING || state == ARMING) {
+        disarm(F("IMU FROZEN"));
+      } else {
+        Serial.println(F("# IMU FROZEN — resetting"));
+      }
+      return;
+    }
+
     float ay_g = (float)ay / ACC_LSB_PER_G;
     float az_g = (float)az / ACC_LSB_PER_G;
     gy_dps = (float)gy / GYRO_LSB_PER_DPS;
