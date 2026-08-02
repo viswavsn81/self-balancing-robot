@@ -210,8 +210,25 @@ said 12.9; hand-holds historically read ~2-4° low). Swing-up findings:
   would beach inside the old symmetric 40).
 - Attempts drift the robot ~30-50 cm each; keep it centered in the
   webcam frame; trim 15.0 saved to EEPROM.
-**Next hands session: (1) flash the Uno (S1→USB + cable, then restore),
-(2) rerun the catch campaign — kick +86/87 with 'C' should land it.**
+**UPDATE (post-flash session): 'C' catch mode IS flashed and live.**
+Catch campaign result: 0/14 — NOT because of the catch mechanism (never
+triggered) but because **open-loop kick strength is not repeatable**:
+the in-gate kick window flipped between regimes across cycles
+(86-87 in-gate → 86-89 weak (~40° apex) → 92 near-gate/95 over →
+93-94 weak again) at stable battery (7.95→7.87). Suspects: motor
+thermal state and, more likely, settle-state variation (ruler contact
+point / gear backlash preload changes how each kick couples).
+NEXT STEPS for swing-up (pick one or more):
+1. Firmware-native swing-up ('S' mode): kick + supplementary mid-swing
+   pulses under 200 Hz feedback + native catch — removes WiFi latency
+   AND open-loop fragility. This is the real fix.
+2. Settle normalization: small pre-pulse before each kick to seat the
+   backlash/ruler consistently, then re-map.
+3. Longer thermal cooldowns (60 s+) between attempts.
+The 'C' handoff remains untested-but-ready; test it opportunistically
+(e.g., hand-swing... no — Vish can simply stand the robot near upright
+and 'C' catches it instantly — USE THIS as the new fast manual-arm
+path too, much easier than the 2 s hold.)
 
 ### Motor sysid RESULTS (2026-08-02, later session — logs/sysid_002.json)
 Webcam marker-tracking measurements, free wheels at 8.2 V:
