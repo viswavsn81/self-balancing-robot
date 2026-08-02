@@ -51,6 +51,10 @@
 #define TURN_OUT_MAX 45         // differential PWM clamp
 #define TURN_DONE_DEG 3.0f
 #define VEL_LPF_TAU 0.4f        // s, commanded-PWM -> velocity estimate filter
+// Below this filtered-PWM magnitude the robot isn't really moving (stiction/
+// hover jitter); count it as zero so dead reckoning doesn't accumulate
+// phantom distance while station-keeping (trial 052: -75 fictitious cm).
+#define VEL_EST_DEADZONE 8.0f
 
 #define TELEM_HEADER "time_ms,raw_angle,kalman_angle,gyro_rate,p_term,i_term,d_term,motor_out,loop_dt_us,gyro_y,gyro_z,tilt_cmd,v_est,v_set,dist_cm,yaw_deg"
 
@@ -543,7 +547,7 @@ void loop() {
         break;
       }
       // Dead reckoning, every inner cycle
-      vEst = kvScale * velLpf;
+      vEst = (fabsf(velLpf) < VEL_EST_DEADZONE) ? 0.0f : kvScale * velLpf;
       distCm += vEst * dt;
 
       if (++midCount >= MID_DECIM) {
@@ -552,7 +556,7 @@ void loop() {
       }
 
       // Inner loop: tiltCmd + = lean forward = setpoint below trim
-      float out = pid.compute(angleTrim - tiltCmd, angle, dt);
+      float out = pid.compute(angleTrim - tiltCmd, angle, gx_dps, dt);
       motorOut = (int)constrain(out, -255, 255);
 
       // Commanded-PWM velocity estimate feed (pre-differential)

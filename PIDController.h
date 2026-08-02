@@ -5,7 +5,11 @@ class PIDController {
 public:
     PIDController(float kp, float ki, float kd);
 
-    float compute(float setpoint, float measured_value, float dt);
+    // measured_rate: d(measured)/dt from a direct sensor (gyro), deg/s.
+    // Using it instead of differentiating the filtered angle removes both
+    // differentiation noise and filter lag from the D term.
+    float compute(float setpoint, float measured_value, float measured_rate,
+                  float dt);
 
     void setTunings(float kp, float ki, float kd);
     void setOutputLimits(float min, float max);

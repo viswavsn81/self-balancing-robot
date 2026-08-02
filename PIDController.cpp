@@ -5,7 +5,8 @@ PIDController::PIDController(float kp, float ki, float kd)
       prev_measured(0), integral(0),
       p_term(0), i_term(0), d_term(0), first_compute(true) {}
 
-float PIDController::compute(float setpoint, float measured_value, float dt) {
+float PIDController::compute(float setpoint, float measured_value,
+                             float measured_rate, float dt) {
     float error = setpoint - measured_value;
 
     p_term = Kp * error;
@@ -17,15 +18,12 @@ float PIDController::compute(float setpoint, float measured_value, float dt) {
     else if (integral < out_min) integral = out_min;
     i_term = integral;
 
-    // Derivative on measurement: no derivative kick on setpoint changes
-    // (the velocity loop will move the setpoint constantly).
-    if (first_compute) {
-        d_term = 0;
-        first_compute = false;
-    } else {
-        d_term = -Kd * (measured_value - prev_measured) / dt;
-    }
+    // Derivative on measurement, from the sensor rate: no setpoint kick,
+    // no differentiation noise, no filter lag (kalman-angle differentiation
+    // destabilized the ~10 Hz mode — trials 019/020).
+    d_term = -Kd * measured_rate;
     prev_measured = measured_value;
+    first_compute = false;
 
     float output = p_term + i_term + d_term;
     if (output > out_max) output = out_max;
