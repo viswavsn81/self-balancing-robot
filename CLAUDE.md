@@ -194,6 +194,20 @@ Uno FLASHED with the frame-accepting bridge firmware and re-verified
 Cart-pole sim written but UNVALIDATED (tools/simulate.py header) — gain
 recommendations come from floor evidence. Phase 2 trial automation:
 `tools/balance_trial.py` (one command per trial + tuning_journal.md).
+### HARDWARE FAULT (2026-08-02 sysid session — BLOCKS ALL MOTION)
+Mid-session, BOTH motors stopped responding to motor-test commands
+entirely (up to PWM 255) while the console, IMU, and battery (8.19 V)
+stayed healthy. Two-motor simultaneous failure = shared single point:
+check with hands+multimeter, in order: (1) STBY wire Uno pin 3 →
+TB6612, (2) VM battery feed to the driver, (3) driver GND, (4) motor
+connectors, (5) worst case the TB6612 itself. Context: the robot had
+vibration-walked ~30-40° across the bench during wheel testing (now on
+a grippy pad — keep it there for all future free-wheel runs).
+Motor sysid produced NO valid data: two runs invalidated by tracking
+bugs (see tools/sysid.py header — auto-ROI background lock; stationary-
+marker aliasing, fixed by radius gate), then the fault. The cart-pole
+sim therefore remains UNVALIDATED; empirical gains stay primary.
+
 REMAINING for Vish's hands:
 1. Confirm shield mode-switch labels (USB vs camera) and record here.
 2. Unplug ESP32 USB-C, connect kit UART cable (power rule 5!), switch
