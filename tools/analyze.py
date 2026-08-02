@@ -16,6 +16,7 @@ from pathlib import Path
 FIELDS = ["time_ms", "raw_angle", "kalman_angle", "gyro_rate",
           "p_term", "i_term", "d_term", "motor_out", "loop_dt_us"]
 OPTIONAL_FIELDS = ["gyro_y", "gyro_z"]   # appended by fw2.1+ (gyro_x=pitch is column 4)
+FW3_FIELDS = ["tilt_cmd", "v_est", "v_set", "dist_cm", "yaw_deg"]  # fw3+
 
 SETTLE_BAND_DEG = 2.0    # settled = |angle - mean| stays inside this band
 SETTLE_HOLD_S = 1.0      # ...for this long
@@ -35,7 +36,9 @@ def load(path: Path):
                 continue
             parts = line.split(",")
             if len(parts) not in (len(FIELDS),
-                                  len(FIELDS) + len(OPTIONAL_FIELDS)):
+                                  len(FIELDS) + len(OPTIONAL_FIELDS),
+                                  len(FIELDS) + len(OPTIONAL_FIELDS)
+                                  + len(FW3_FIELDS)):
                 continue  # torn line (logger started mid-row)
             try:
                 rows.append([float(p) for p in parts])
