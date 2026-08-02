@@ -431,6 +431,7 @@ void setup() {
   Wire.setClock(400000);
 
   motors.init();                 // driver in standby, PWM zero
+  pinMode(LED_BUILTIN, OUTPUT);  // arming guide: lit = angle inside arm gate
   Serial.println(F("# self-balancing-robot fw3 — motors DISARMED at boot"));
 
   loadSettings();
@@ -521,6 +522,13 @@ void loop() {
       Serial.println(angleTrim, 2);
     }
   }
+
+  // LED: in ARMING, lit while the angle is inside the gate (hold-still
+  // guide for Vish); solid while BALANCING; off otherwise.
+  if (state == ARMING)
+    digitalWrite(LED_BUILTIN, fabsf(angle - angleTrim) < ARM_TOL_DEG);
+  else
+    digitalWrite(LED_BUILTIN, state == BALANCING);
 
   int motorOut = 0;
 
