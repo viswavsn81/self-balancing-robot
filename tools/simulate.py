@@ -17,13 +17,16 @@ D by differentiating a lagged (kalman-like) angle estimate, output
 
 Usage: python3 tools/simulate.py [--grid]
 
-STATUS (2026-08-02): the sanity anchors FAIL — the known-good floor gains
-do not survive in this model even after calibrating L/lags and adding
-Coulomb friction. The real robot's stability appears to depend on
-dynamics this model omits (gear backlash, wheel inertia, the ~10 Hz
-deadband limit-cycle regime). Treat any ranking from this tool as
-UNVALIDATED; the floor evidence (logs/trial_044..051) outranks it.
-Kept for future refinement.
+STATUS (2026-08-02, 2nd pass): STILL UNVALIDATED. Even with the
+MEASURED motor model (sysid_002: speed-source, k=0.137 cm/s/count,
+tau=0.13 s), the known-good gains die in-model. Diagnosis: this
+cart-pole abstraction couples motor to body only through cart
+acceleration; the real robot's dominant control path at small angles is
+the wheel motors' direct REACTION TORQUE on the body, which is absent
+here (measured top speed is only 33 cm/s, yet real logs show recoveries
+from 21 deg — impossible through cart acceleration alone). A future
+model must add the torque-reaction term. Until then: floor evidence
+outranks anything this prints.
 """
 
 import argparse
@@ -36,8 +39,9 @@ L = 0.06              # m, CoM height above axle (guess; IMU at 0.05)
 R_WHEEL = 0.0315      # m
 G = 9.81
 J = M_BODY * L * L    # point-mass pendulum inertia about axle
-MOTOR_TAU = 0.050     # s, force response lag (guess)
-F_MAX = 1.6           # N at PWM 255 (calibrated, see module docstring)
+MOTOR_TAU = 0.13      # s, MEASURED (sysid_002, median tau both wheels)
+V_PER_OUT = 0.00137   # m/s per control count, MEASURED (sysid_002 fit,
+                      # k=0.137 cm/s/count mean incl. firmware deadband map)
 DEADBAND = 18         # PWM counts (bench test 4)
 DT = 0.005            # 200 Hz
 SENSOR_LAG = 0.030    # s, kalman-ish angle lag
@@ -78,25 +82,15 @@ def simulate(kp, ki, kd, seconds=12.0, seed=1, tilt0=3.0, push_n=1.0):
         if abs(out) >= 250:
             sat_t += DT
 
-        # deadband mapping then force with motor lag
-        pwm = 0 if out == 0 else math.copysign(
-            DEADBAND + abs(out) * (255 - DEADBAND) / 255, out)
-        f_cmd = F_MAX * pwm / 255.0
-        f += (DT / (MOTOR_TAU + DT)) * (f_cmd - f)
-
-        # dynamics: force accelerates cart; cart accel tilts pendulum.
-        # Coulomb friction with stick: small forces don't move the cart.
-        f_net = f - B_VISC * v
-        if abs(v) < 0.005 and abs(f_net) < F_COUL:
-            f_net = 0.0
-            v = 0.0
-        else:
-            f_net -= math.copysign(F_COUL, v if abs(v) > 0.005 else f_net)
-        a_cart = f_net / M_BODY
+        # MEASURED plant (sysid_002): geared motor = wheel-speed source
+        # with first-order lag; cart velocity tracks commanded speed.
+        v_cmd = V_PER_OUT * out
+        v_new = v + (DT / (MOTOR_TAU + DT)) * (v_cmd - v)
+        a_cart = (v_new - v) / DT
+        v = v_new
         al = (G * math.sin(th) - a_cart * math.cos(th)) / L
         om += al * DT
         th += om * DT
-        v += a_cart * DT
         ripple.append(math.degrees(th))
 
         # disturbance push (impulse on angle rate)

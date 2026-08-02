@@ -194,19 +194,37 @@ Uno FLASHED with the frame-accepting bridge firmware and re-verified
 Cart-pole sim written but UNVALIDATED (tools/simulate.py header) — gain
 recommendations come from floor evidence. Phase 2 trial automation:
 `tools/balance_trial.py` (one command per trial + tuning_journal.md).
-### HARDWARE FAULT (2026-08-02 sysid session — BLOCKS ALL MOTION)
-Mid-session, BOTH motors stopped responding to motor-test commands
-entirely (up to PWM 255) while the console, IMU, and battery (8.19 V)
-stayed healthy. Two-motor simultaneous failure = shared single point:
-check with hands+multimeter, in order: (1) STBY wire Uno pin 3 →
-TB6612, (2) VM battery feed to the driver, (3) driver GND, (4) motor
-connectors, (5) worst case the TB6612 itself. Context: the robot had
-vibration-walked ~30-40° across the bench during wheel testing (now on
-a grippy pad — keep it there for all future free-wheel runs).
-Motor sysid produced NO valid data: two runs invalidated by tracking
-bugs (see tools/sysid.py header — auto-ROI background lock; stationary-
-marker aliasing, fixed by radius gate), then the fault. The cart-pole
-sim therefore remains UNVALIDATED; empirical gains stay primary.
+### Motor sysid RESULTS (2026-08-02, later session — logs/sysid_002.json)
+Webcam marker-tracking measurements, free wheels at 8.2 V:
+- **Left motor: 0.155 cm/s per PWM count; right: 0.118 — asymmetry 1.32×**
+  (left noticeably stronger; heading hold absorbs it while driving).
+- **Response time τ ≈ 0.11–0.15 s** both wheels (camera-limited precision).
+- Reference-step drift over session: left −13%, right −1% (sag + heating).
+- Firmware `k` corrected 0.235 → **0.14** (saved to EEPROM). Loaded (on-
+  floor) speeds will be lower — the g-run tape-measure calibration still
+  applies on top. Suggested velocity-loop rescale to preserve the proven
+  trial-051 loop gain with the new k: **vp 0.065, vi 0.033** (= old
+  gains × 0.235/0.14) — try after the wireless smoke test.
+- Max no-load speed ≈ 33 cm/s → V_CRUISE 12 cm/s is a sane 40%.
+- Measurement lessons baked into tools/sysid.py: manual exposure (motion
+  blur destroys marker tracking above ~0.3 rev/s), radius-gated orbit
+  tracking, fixed per-pose ROIs, mapping anchored by pulse + sharpie
+  marks on the motors (verify EVERY session — the robot's pose changes).
+- Cart-pole sim: STILL unvalidated even with the measured motor model —
+  missing wheel-torque reaction path (see tools/simulate.py header).
+
+### Hardware-fault scare (2026-08-02, RESOLVED — record kept for honesty)
+Mid-session both motors appeared dead to commands. After Vish's wire
+reseat + a power cycle they ran again — but the episode was tangled
+with THREE instrumentation artifacts that faked "no motion" verdicts:
+(1) OpenCV V4L2 stale-buffer frames on sparse reads, (2) motion blur
+making a fast wheel look static in frame-diffs AND invisible to marker
+tracking, (3) wheel-side mapping going stale every time the robot's
+pose changed. It cannot be fully reconstructed how much was real fault
+vs artifact; the wiring remains a watch item (robot had also
+vibration-walked across the bench — keep it on the grippy pad). If
+"motors dead" ever appears again: verify with EYES first, then the
+layered check (serial echo → feed freshness → manual-exposure frames).
 
 REMAINING for Vish's hands:
 1. Confirm shield mode-switch labels (USB vs camera) and record here.

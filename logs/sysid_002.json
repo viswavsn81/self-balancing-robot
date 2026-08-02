@@ -1,0 +1,147 @@
+{
+ "mapping": {
+  "l": "frameR",
+  "r": "frameL"
+ },
+ "wheels": {
+  "l": {
+   "steps": {
+    "25": {
+     "ss_revs": 0.19,
+     "ss_cms": 3.8,
+     "tau_s": 0.128,
+     "n": 88,
+     "orbit_px": 29.7
+    },
+    "35": {
+     "ss_revs": 0.292,
+     "ss_cms": 5.8,
+     "tau_s": 0.163,
+     "n": 86,
+     "orbit_px": 23.8
+    },
+    "50": {
+     "ss_revs": 0.378,
+     "ss_cms": 7.5,
+     "tau_s": 0.131,
+     "n": 82,
+     "orbit_px": 24.8
+    },
+    "70": {
+     "ss_revs": 0.51,
+     "ss_cms": 10.1,
+     "tau_s": 0.163,
+     "n": 73,
+     "orbit_px": 30.0
+    },
+    "95": {
+     "ss_revs": 0.823,
+     "ss_cms": 16.3,
+     "tau_s": 0.095,
+     "n": 54,
+     "orbit_px": 31.1
+    },
+    "120": {
+     "ss_revs": 0.902,
+     "ss_cms": 17.9,
+     "tau_s": 0.163,
+     "n": 47,
+     "orbit_px": 25.6
+    }
+   },
+   "ref": {
+    "ref_start": {
+     "ss_revs": 0.483,
+     "ss_cms": 9.6,
+     "tau_s": 0.133,
+     "n": 75,
+     "orbit_px": 23.4
+    },
+    "ref_end": {
+     "ss_revs": 0.422,
+     "ss_cms": 8.3,
+     "tau_s": 0.095,
+     "n": 69,
+     "orbit_px": 29.0
+    }
+   }
+  },
+  "r": {
+   "steps": {
+    "25": {
+     "ss_revs": 0.133,
+     "ss_cms": 2.6,
+     "tau_s": 0.031,
+     "n": 86,
+     "orbit_px": 28.5
+    },
+    "35": {
+     "ss_revs": 0.163,
+     "ss_cms": 3.2,
+     "tau_s": 0.027,
+     "n": 80,
+     "orbit_px": 28.6
+    },
+    "50": {
+     "ss_revs": 0.27,
+     "ss_cms": 5.3,
+     "tau_s": 0.131,
+     "n": 73,
+     "orbit_px": 30.7
+    },
+    "70": {
+     "ss_revs": 0.384,
+     "ss_cms": 7.6,
+     "tau_s": 0.099,
+     "n": 63,
+     "orbit_px": 28.7
+    },
+    "95": {
+     "ss_revs": 0.539,
+     "ss_cms": 10.7,
+     "tau_s": 0.127,
+     "n": 48,
+     "orbit_px": 30.6
+    },
+    "120": {
+     "ss_revs": 0.683,
+     "ss_cms": 13.5,
+     "tau_s": 0.131,
+     "n": 40,
+     "orbit_px": 26.8
+    }
+   },
+   "ref": {
+    "ref_start": {
+     "ss_revs": 0.373,
+     "ss_cms": 7.4,
+     "tau_s": 0.227,
+     "n": 68,
+     "orbit_px": 32.8
+    },
+    "ref_end": {
+     "ss_revs": 0.371,
+     "ss_cms": 7.3,
+     "tau_s": 0.099,
+     "n": 69,
+     "orbit_px": 28.0
+    }
+   }
+  }
+ },
+ "fits": {
+  "l": {
+   "k_cms_per_count": 0.1551,
+   "zero_speed_intercept_pwm": -0.2,
+   "tau_median_s": 0.147,
+   "ref_drift_pct": -13.5
+  },
+  "r": {
+   "k_cms_per_count": 0.1179,
+   "zero_speed_intercept_pwm": 5.2,
+   "tau_median_s": 0.113,
+   "ref_drift_pct": -1.4
+  }
+ },
+ "asymmetry_l_over_r": 1.316
+}
