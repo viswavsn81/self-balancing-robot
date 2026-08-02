@@ -174,6 +174,24 @@ Python (cart-pole with the robot's approximate mass/height, which you should
 ask Vish to measure) to pre-screen gain ranges — but the log-driven physical
 protocol above is the source of truth.
 
+### Wireless bridge status (overnight 2026-08-02 — WORKING, unwired)
+ESP32-S3 camera bridge is flashed and verified end-to-end over WiFi:
+`http://robot-cam.local/` (status JSON), `/stream` (MJPEG, measured
+**25 fps VGA**, ~7 KB/frame), `ws://robot-cam.local:81/` command channel
+(verified forwarding to UART0 @250k). Camera pin map = ESP32S3_EYE
+preset (guessed right, camera OK, 8 MB PSRAM in use). Uno console now
+also accepts `$payload*XOR` frames (compile-checked, **not flashed**).
+Client: `tools/cam_client.py` (viewer + console, e-stop on exit; the
+ESP32 also sends an e-stop frame when the last WS client disconnects).
+TOMORROW to integrate (Vish's hands):
+1. Finish paused bench test 4 (slow deadband ramp) FIRST — robot still
+   runs yesterday's firmware; nothing changed on it overnight.
+2. Confirm shield mode-switch labels (USB vs camera) and record here.
+3. Flash the Uno with the frame-accepting firmware (USB position).
+4. Unplug ESP32 USB-C, connect kit UART cable (power rule 5!), switch
+   to camera position, then: `python3 tools/cam_client.py` → `?` should
+   answer over WiFi. Then wireless bench trials.
+
 ### Phase 3 status (2026-08-01 late session — IN PROGRESS)
 Firmware DONE and flashed: cascaded control (20 Hz velocity PI on
 commanded-PWM estimate w/ 3 s soft-start after arm, ±3° tilt clamp,
