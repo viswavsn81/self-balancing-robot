@@ -1,5 +1,119 @@
 # CLAUDE.md — Self-Balancing Robot (viswavsn81/self-balancing-robot)
 
+## ⛳ SESSION HANDOFF (2026-08-02 — project parked; read this first)
+
+Written for a future session with zero context beyond this repo.
+Vish is away for a while; **NO HUMAN HANDS are available** — no
+flashing, no wiring, no mechanical work, no printing — until he says
+otherwise. He will likely flip the battery switch on request; assume
+nothing more.
+
+### Milestone map and state
+
+| # | Milestone | State |
+|---|-----------|-------|
+| M0 | Infrastructure & remote iteration | **Mostly DONE.** Wireless console (WS, framed `$cmd*XX`), 25 fps MJPEG, logging/analysis/trial tooling all work. ESP32 self-OTA: NOT installed — needs `ArduinoOTA` added + ONE USB-C flash (hands), then future ESP32 updates are wireless. Uno remote flash: bridge (TCP :2323) + `R` command are flashed and working, but optiboot won't start from a software jump — **blocked solely on the reset-wire jumper** (instructions below); the day it's wired, Uno OTA works. |
+| M1 | Balance quality / jitter (PLAN.md Objective A) | **Diagnosed & planned, implementation blocked.** The F1–F5 firmware knob batch requires one Uno flash (hands). Hands-free now: deeper log analysis only. Floor estimate and fix order in PLAN.md. |
+| M2 | Autonomy life cycle | **DONE.** Self-erect (`S`), instant catch (`C`), gentle self-park (`L`). 93.6 s balance record (trial 073). Caveat: swing-up strength is battery-sensitive; works best on fresh charge; `C`-assisted stand-up always works if a human stands it near upright. |
+| M3 | Motion & choreography | **Available through the EXISTING flashed firmware — no reflash needed.** Console verbs: `v <cm/s>` velocity, `g <cm>` distance, `t <deg>` turn (yaw scale unreliable ±34 % — see IMU note), `S`/`C`/`L`. Dance choreography = timed command sequences over WS; prototype hands-free whenever battery is on. Distance scale k=0.14 is no-load-calibrated; on-floor tape calibration still pending. |
+| M4 | Vision / ROS2 A→B (PLAN.md Objective B) | **Planned, not started.** Laptop-side work (bridge ROS2 node, person-detection prototyping on live/recorded streams, EKF scaffolding) is fully hands-free. AprilTag/checkerboard PRINTS are deferred (hands). |
+
+### Exact hardware state (last verified 2026-08-02, end of session)
+
+- **Uno (ATmega328P)**: flashed with the full-feature fw3 build at repo
+  HEAD (`self_balancing_robot.ino` — includes S/C/L/R, asymmetric
+  cutoff, swing taper, 38400 console). EEPROM (survives everything):
+  Kp=18 Ki=0.5 Kd=0.2, trim=15.0, deadband 19/17, vp .04 vi .02 yp 2.0
+  k=0.14, gyro bias stored. Confirmed by live `?` at closeout.
+- **ESP32-S3 camera**: flashed with `esp32_cam_bridge/` at repo HEAD
+  (WS+HTTP+flash-bridge, Serial2 GPIO3/40 @38400). UART-cable-powered.
+  NO OTA capability on it yet.
+- **Shield switch S1**: **cam position** (camera link active; USB console
+  dead). Uno USB cable: unplugged. ESP32 USB-C: unplugged (power rule 5:
+  never together with the UART cable).
+- **Robot pose**: parked on its FRONT ruler-bumper tip (~−39°), the
+  swing-up launchpad, roughly mid-garage in the desk webcam's view.
+- **Battery**: 2S pack, last read 7.35 V (≈3.68 V/cell — good storage
+  level). Vish instructed to switch it OFF at parking; assume OFF.
+  Charger state unknown; request a charge to ~7.8+ before any
+  swing-up-heavy session.
+- **Desk webcam**: /dev/video0 on this laptop, overlooks the garage
+  area. Use manual exposure (~100) for any wheel tracking — auto
+  exposure motion-blur fakes "not rotating" (see tools/sysid.py header).
+
+### Safety rules in force (unchanged, non-negotiable)
+
+POWER PROTOCOL section below, plus: robot boots DISARMED; `x` e-stops on
+the byte from every transport; never leave it armed without a connected
+console (the ESP32 auto-e-stops when the last WS client drops); battery-
+low arm refusal at 6.8 V; end every session disarmed, ideally parked via
+`L` onto the front rest (a hard disarm-drop can side-fall — unrecoverable
+without hands).
+
+### Re-establishing contact (ALWAYS in this order)
+
+1. Ask Vish to switch the battery ON (the only hands you may request).
+2. `curl http://robot-cam.local/` — expect the status JSON (camera true,
+   rssi, counters). No answer in ~30 s after power: mDNS may lag; try the
+   DHCP IP; the ESP32 boots on UART power in ~10 s.
+3. Wireless smoke test: WS to `ws://robot-cam.local:81/`, send framed
+   `?` (`$?*3F`), expect `# state=DISARMED …` lines. Send `x`, expect
+   `# DISARMED: emergency stop`.
+4. Check `vbat` in the status line before any motor work (>7.0 for
+   trials; >7.7 for swing-up campaigns).
+5. Webcam frame to confirm pose/position before any motion command.
+6. Tools quickstart: `tools/cam_client.py` (viewer+console);
+   scratchpad rigs are gone — `swing_rig.py` patterns are described in
+   commits around trials 063–074; rebuild as needed.
+
+### Hands-free work queue (ordered; start here next session)
+
+1. **M3 choreography engine (laptop-side)**: a Python sequencer that
+   plays timed console-command scripts (stand up via S/C, sway with
+   `v` ± small values, spins with `t`, park with `L`), with the webcam
+   recording. Needs only battery-on. Deliverable: a repeatable 30 s
+   "dance" clip. Note turns are approximate (yaw scale) — choreograph
+   by time, not angle.
+2. **On-floor distance calibration**: `g 80` + webcam-measured actual
+   displacement (the garage floor grid lines are usable scale
+   references) → correct `k` via console + `W`. Unlocks honest `g`.
+3. **M4/B-0 laptop foundations**: ROS2 (or plain-Python first) bridge
+   node: MJPEG → frames, WS telemetry → topics/logs; person-detection
+   prototype (e.g. ultralytics/OpenCV DNN) against the live stream or
+   recorded clips — zero robot risk, works even with battery off using
+   recorded footage.
+4. **M1 analysis depth**: mine logs 044–074 for the PLAN.md F1–F5
+   parameter priors (e.g. fit the ideal soft-deadband curve offline) so
+   the eventual flash session lands pre-tuned.
+5. **Prepare (compile-only) firmware batch** for the next hands moment:
+   F1–F5 jitter knobs + ArduinoOTA on the ESP32 — both ready to flash
+   in one 5-minute S1 dance when Vish returns.
+
+### Deferred hands tasks (ten-minute instructions, one place)
+
+1. **Uno reset wire (unlocks Uno OTA forever)**: solder/jumper ESP32
+   **GPIO41** (free on this S3; camera uses the S3-EYE map, UART uses
+   3/40) → **330 Ω resistor** → Uno **RESET** (easiest access: RESET pin
+   on the shield's power header row, or ICSP header pin 5). Keep the
+   ESP32 pin configured INPUT (hi-Z) except a 100 ms LOW pulse when the
+   flash bridge accepts a client (firmware change ready to write; do NOT
+   drive it HIGH — the Uno side has a 10 k pull-up to 5 V).
+2. **ESP32 OTA install**: add ArduinoOTA to `esp32_cam_bridge`, then ONE
+   USB-C flash (UART cable OUT first — power rule 5), restore. After
+   that the ESP32 never needs its cable again.
+3. **Uno jitter-knob flash**: S1 → USB, plug Uno USB, flash the prepared
+   F1–F5 build, restore S1 → cam, unplug. 5 minutes.
+4. **Mechanical pass (PLAN.md F6, ~15 min)**: re-tape the see-saw ruler
+   tight; foam pad under the IMU; spin each wheel by hand feeling for
+   hub wobble; snug the camera mount screws.
+5. **GY-521 (MPU6050) swap (~10 min + bench time)**: replace module
+   (fixes the freeze fault AND the ±34 % unstable Z-gyro → real turns).
+   Afterward: run the shake test (pattern in logs 040–043), `c` recal,
+   re-verify pitch axis/scale by the trial-014 hand-rock method — the
+   new chip may have different constants (`GYRO_LSB_PER_DPS`!).
+6. **Prints for M4**: A4 checkerboard (camera intrinsics) + 4–6
+   AprilTags 36h11 at 15 cm; tape to garage walls; tape-measure survey.
+
 ## Mission
 Take this Arduino self-balancing robot from "balances in place (barely)" to
 "balances robustly AND drives from point A to point B without falling over."
