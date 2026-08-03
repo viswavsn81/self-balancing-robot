@@ -1,0 +1,10 @@
+# trial: trial_068.csv
+# note: front-rest S campaign v2b (reconnect rig, flip-then-cool)
+# journal: []
+# stream off
+# MOTOR TEST: wheels OFF the ground, battery on.
+# l <pwm> / r <pwm> (-255..255); auto-zero after 2 s idle; x exits
+# DISARMED: emergency stop
+# unknown cmd: *
+# DISARMED: emergency stop
+# unknown cmd: *

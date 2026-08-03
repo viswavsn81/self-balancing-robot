@@ -53,6 +53,7 @@
 #define SWING_PUMP_PWM 85
 #define SWING_SETTLE_PWM 30
 #define SWING_TIMEOUT_MS 8000UL
+#define SWING_TAPER_DEG 18.0f
 #define ARM_TOL_DEG 5.0f        // must be this close to upright to arm
 #define ARM_HOLD_MS 2000UL      // ...continuously for this long
 #define MOTOR_TEST_TIMEOUT_MS 2000UL  // test PWM auto-zeroes without fresh cmd
@@ -724,10 +725,14 @@ void loop() {
         Serial.println(F("# CAUGHT (swingup) — balancing"));
         break;
       }
-      // bang-bang energy pump: |rel| shrinking = moving toward upright.
-      // d|rel|/dt = sign(rel) * rate; pump while it is negative.
+      // bang-bang energy pump with top taper: pump while moving toward
+      // upright, but COAST once within SWING_TAPER_DEG of the top so the
+      // gate crossing is slow enough to catch (trial 067: un-tapered
+      // pumping blew through the gate at >60 dps from the rear rest).
       float closing = (rel > 0 ? gx_dps : -gx_dps);
-      if (closing < -5.0f) {
+      if (fabsf(rel) < SWING_TAPER_DEG) {
+        motors.driveRaw(0, 0);
+      } else if (closing < -5.0f) {
         motors.driveRaw(SWING_PUMP_PWM, SWING_PUMP_PWM);
       } else if (closing > 5.0f) {
         motors.driveRaw(0, 0);

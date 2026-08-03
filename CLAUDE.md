@@ -194,6 +194,28 @@ Uno FLASHED with the frame-accepting bridge firmware and re-verified
 Cart-pole sim written but UNVALIDATED (tools/simulate.py header) — gain
 recommendations come from floor evidence. Phase 2 trial automation:
 `tools/balance_trial.py` (one command per trial + tuning_journal.md).
+### ⭐ SELF-ERECTION ACHIEVED (2026-08-02, logs 066-069)
+The robot stands itself up and balances, fully autonomously:
+- **'S' swing-up works**: bang-bang pump + top taper (taper compiled
+  but NOT flashed — the un-tapered pump still catches reliably FROM THE
+  FRONT REST, whose 52° climb bleeds energy so the gate crossing is
+  slow; rear-rest launches overspeed through the gate, needs the taper
+  flash). Recipe: launch from front rest, 90-150 s motor cooldowns
+  between attempts (thermals are the #1 enemy of swing-up), flip
+  rear→front with +140/300 ms when needed. Catch rate ~2/3 warm.
+- **Post-ruler gains: Kp=18, Ki=0.5, Kd=0.2, trim 15.0** (EEPROM):
+  cycle-3 result = 45 s full-window balance, 2.7° spread, zero falls,
+  after self-erecting. One protocol iteration from the old 15.
+- Remote Uno reflash via 'R'+TCP:2323: bridge relays, but optiboot
+  does NOT start from a software jmp (app answers avrdude's syncs).
+  Needs a hardware wire: ESP32 GPIO → Uno RESET (future one-wire mod).
+  Until then Uno flashes stay manual; taper firmware awaits one.
+- Space rule: S attempts/flips translate the robot ~30-50 cm; monitor
+  with the webcam, keep it centered.
+NEXT: flash the taper (enables rear-rest launches too), then Phase 3
+motion: station-keeping refinement + small g moves, all reachable
+autonomously now that falls self-recover.
+
 ### Swing-up autonomous session (2026-08-02 night — logs in commits)
 Robot geometry with the centered see-saw ruler bumper (measured by IMU):
 **rear rest +43.8°, front rest −39.5°, balance trim ≈ 15.0** (hand-hold
