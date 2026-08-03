@@ -54,6 +54,12 @@
 #define SWING_SETTLE_PWM 30
 #define SWING_TIMEOUT_MS 8000UL
 #define SWING_TAPER_DEG 18.0f
+// Gentle lay-down ('L'): from balancing, walk the setpoint forward so the
+// robot leans controlled onto the FRONT ruler tip (the swing-up
+// launchpad), then cut motors — autonomous sessions always end on a
+// recoverable rest instead of an uncontrolled (sometimes sideways) drop.
+#define LAYDOWN_RATE_DPS 6.0f
+#define LAYDOWN_DONE_REL -20.0f
 #define ARM_TOL_DEG 5.0f        // must be this close to upright to arm
 #define ARM_HOLD_MS 2000UL      // ...continuously for this long
 #define MOTOR_TEST_TIMEOUT_MS 2000UL  // test PWM auto-zeroes without fresh cmd
@@ -138,6 +144,8 @@ float yawTarget = 0.0f;
 uint8_t turnSettleCount = 0;
 uint8_t midCount = 0;
 
+bool layDown = false;
+float layDownOfs = 0.0f;
 uint8_t telemCount = 0;
 char lineBuf[24];
 uint8_t lineLen = 0;
@@ -247,6 +255,7 @@ void disarm(const __FlashStringHelper* why) {
   pid.reset();
   resetMotion();
   testPwmL = testPwmR = 0;
+  layDown = false;
   state = DISARMED;
   Serial.print(F("# DISARMED: "));
   Serial.println(why);
@@ -457,6 +466,17 @@ void parseLine(char* line) {
       Serial.print(F("# vbat=")); Serial.print(vbat, 2);
       Serial.print(F("V (raw A0=")); Serial.print(analogRead(VBAT_PIN));
       Serial.println(F(")"));
+      break;
+    case 'L':
+      if (state == BALANCING) {
+        layDown = true;
+        layDownOfs = 0.0f;
+        mode = M_HOLD;
+        vSetTarget = 0;
+        Serial.println(F("# LAYDOWN: leaning onto front rest"));
+      } else {
+        Serial.println(F("# laydown refused: not balancing"));
+      }
       break;
     case 'W': saveSettings(); break;
     default:
@@ -745,7 +765,16 @@ void loop() {
     }
     case BALANCING: {
       float rel = angle - angleTrim;
+      if (layDown) {
+        layDownOfs += LAYDOWN_RATE_DPS * dt;
+        if (rel < LAYDOWN_DONE_REL) {
+          layDown = false;
+          disarm(F("laid down (front rest)"));
+          break;
+        }
+      }
       if (rel < -TILT_CUTOFF_FWD_DEG || rel > TILT_CUTOFF_BACK_DEG) {
+        layDown = false;
         disarm(F("tilt cutoff"));
         break;
       }
@@ -759,7 +788,7 @@ void loop() {
       }
 
       // Inner loop: tiltCmd + = lean forward = setpoint below trim
-      float out = pid.compute(angleTrim - tiltCmd, angle, gx_dps, dt);
+      float out = pid.compute(angleTrim - tiltCmd - layDownOfs, angle, gx_dps, dt);
       motorOut = (int)constrain(out, -255, 255);
 
       // Commanded-PWM velocity estimate feed (pre-differential)
