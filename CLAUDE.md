@@ -215,6 +215,13 @@ The robot stands itself up and balances, fully autonomously:
 NEXT: flash the taper (enables rear-rest launches too), then Phase 3
 motion: station-keeping refinement + small g moves, all reachable
 autonomously now that falls self-recover.
+KNOWN GAP (2026-08-02 end): a hard disarm from balancing can twist the
+robot into a SIDE-fall (off the see-saw plane) — S-mode has no roll
+authority, so that pose needs a human. Fix idea for firmware: a
+"gentle lay-down" command (controlled forward lean onto the ruler
+before cutting motors) so autonomous sessions always end on a
+recoverable rest. Session ended with the robot side-fallen near the
+back wall; needs standing/repositioning before the next run.
 
 ### Swing-up autonomous session (2026-08-02 night — logs in commits)
 Robot geometry with the centered see-saw ruler bumper (measured by IMU):
